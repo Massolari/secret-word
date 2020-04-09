@@ -52,6 +52,7 @@ type alias GameModel =
     , guesser : ( Int, String )
     , status : GameStatus
     , generator : Generator Int
+    , drawnIndex : List Int
     }
 
 
@@ -104,6 +105,7 @@ initGame =
     , guesser = ( 0, "Não encontrado" )
     , status = GameShowingPlayers
     , generator = randomWord <| Array.length Words.words
+    , drawnIndex = []
     }
 
 
@@ -340,17 +342,28 @@ updateGame msg ({ gameModel } as model) =
             ( model, newWordIndex gameModel.generator )
 
         NewWordIndex index ->
-            let
-                word =
-                    Array.get index Words.words
-                        |> Maybe.withDefault "Erro"
-            in
-            ( { model
-                | gameModel =
-                    { gameModel | word = word }
-              }
-            , Cmd.none
-            )
+            if List.member index gameModel.drawnIndex then
+                ( model, newWordIndex gameModel.generator )
+
+            else
+                let
+                    newDrawnIndex =
+                        index :: gameModel.drawnIndex
+
+                    newGameModel =
+                        { gameModel | drawnIndex = newDrawnIndex }
+                in
+                case Array.get index Words.words of
+                    Just word ->
+                        ( { model
+                            | gameModel =
+                                { newGameModel | word = word }
+                          }
+                        , Cmd.none
+                        )
+
+                    Nothing ->
+                        ( { model | gameModel = newGameModel }, newWordIndex gameModel.generator )
 
 
 
