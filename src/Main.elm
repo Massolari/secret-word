@@ -493,6 +493,7 @@ viewPlaying { gameModel } =
         , viewPlayingButton "done" "Acertou" Correct
         , viewPlayingButton "redo" "Pular" Jump
         , viewPlayingButton "block" "Lista negra" BlackList
+        , h5 [ headline5 ] [ text <| "Acertou " ++ String.fromInt gameModel.score ]
         ]
 
 
@@ -532,21 +533,6 @@ viewGameOver { gameModel } =
 
 
 
--- viewWatch : Model -> Element Msg
--- viewWatch model =
---     row
---         blockAttributes
---         [ el [] <| text "Relógio" ]
--- viewWord : Model -> Element Msg
--- viewWord model =
---     row
---         blockAttributes
---         [ el [] <| text "Palavra" ]
--- viewScore : Model -> Element Msg
--- viewScore model =
---     row
---         blockAttributes
---         [ el [] <| text "Pontuação" ]
 ------------
 -- Helper --
 ------------
