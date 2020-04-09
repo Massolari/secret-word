@@ -7,6 +7,7 @@ import Html exposing (Html, form, h3, h5, p, text)
 import Html.Attributes exposing (style, type_)
 import Html.Events exposing (onSubmit)
 import Material.Button exposing (buttonConfig, raisedButton)
+import Material.Fab exposing (fab, fabConfig)
 import Material.IconButton exposing (iconButton, iconButtonConfig)
 import Material.LayoutGrid exposing (layoutGrid, layoutGridCell, layoutGridInner, span12, span3)
 import Material.List exposing (list, listConfig, listItem, listItemConfig, listItemMeta, listItemPrimaryText, listItemSecondaryText, listItemText)
@@ -132,7 +133,6 @@ type GameMsg
     | Restart
     | Correct
     | Jump
-    | BlackList
     | NewWordIndex Int
 
 
@@ -339,9 +339,6 @@ updateGame msg ({ gameModel } as model) =
         Jump ->
             ( model, newWordIndex gameModel.generator )
 
-        BlackList ->
-            ( model, newWordIndex gameModel.generator )
-
         NewWordIndex index ->
             let
                 word =
@@ -437,7 +434,7 @@ viewGame ({ gameModel } as model) =
         , viewGameContent model
         , list { listConfig | nonInteractive = True, twoLine = True } <|
             List.map
-                (\( _, player ) ->
+                (\player ->
                     listItem listItemConfig
                         [ listItemText []
                             [ listItemPrimaryText []
@@ -447,7 +444,7 @@ viewGame ({ gameModel } as model) =
                             ]
                         ]
                 )
-                (Dict.toList model.players)
+                (Dict.values model.players |> List.sortBy .score |> List.reverse)
         ]
 
 
@@ -492,20 +489,22 @@ viewPlaying { gameModel } =
             [ text gameModel.word ]
         , viewPlayingButton "done" "Acertou" Correct
         , viewPlayingButton "redo" "Pular" Jump
-        , viewPlayingButton "block" "Lista negra" BlackList
         , h5 [ headline5 ] [ text <| "Acertou " ++ String.fromInt gameModel.score ]
         ]
 
 
 viewPlayingButton : String -> String -> GameMsg -> Html Msg
 viewPlayingButton icon txt msg =
-    raisedButton
-        { buttonConfig
-            | icon = Just icon
-            , trailingIcon = True
-            , onClick = Just (GameMsg msg)
-        }
-        txt
+    -- raisedButton
+    --     { buttonConfig
+    --         | icon = Just icon
+    --         , trailingIcon = True
+    --         , onClick = Just (GameMsg msg)
+    --     }
+    --     txt
+    fab
+        { fabConfig | onClick = Just (GameMsg msg) }
+        icon
 
 
 viewGameOver : Model -> Html Msg
