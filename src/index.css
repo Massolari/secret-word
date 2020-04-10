@@ -1,0 +1,11 @@
+.center {
+    text-align: center
+}
+
+.list-inline-block mdc-list {
+    display: inline-block !important;
+}
+
+.action-button {
+    margin: 0 10px 0 10px;
+}
