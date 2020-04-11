@@ -494,7 +494,7 @@ viewGameShowingPlayers { gameModel } =
     in
     layoutGridCell []
         [ h5 [ headline5 ]
-            [ text <| questioner ++ " diz as palavras para " ++ guesser ]
+            [ text <| questioner ++ " dá dicas para " ++ guesser ++ " adivinhar a palavra" ]
         , raisedButton
             { buttonConfig
                 | icon = Just "play_arrow"
