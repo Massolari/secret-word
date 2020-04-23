@@ -4,10 +4,10 @@ import Array exposing (Array)
 import Browser
 import Dict exposing (Dict)
 import Html exposing (Html, form, h4, h5, p, span, text)
-import Html.Attributes exposing (class, novalidate, style, type_)
+import Html.Attributes exposing (class, disabled, novalidate, style, type_)
 import Html.Events exposing (onSubmit)
 import Material.Button exposing (buttonConfig, raisedButton)
-import Material.Fab exposing (fab, fabConfig)
+import Material.Fab exposing (extendedFab, extendedFabConfig, fab, fabConfig)
 import Material.IconButton exposing (iconButton, iconButtonConfig)
 import Material.LayoutGrid exposing (layoutGrid, layoutGridCell, layoutGridInner, span12, span3)
 import Material.List exposing (list, listConfig, listItem, listItemConfig, listItemMeta, listItemPrimaryText, listItemSecondaryText, listItemText)
@@ -55,6 +55,7 @@ type alias GameModel =
     , status : GameStatus
     , generator : Generator Int
     , drawnIndex : List Int
+    , toShowJump : Int
     }
 
 
@@ -109,6 +110,7 @@ initGame =
     , status = GameShowingPlayers
     , generator = randomWord <| Array.length Words.all
     , drawnIndex = []
+    , toShowJump = 5
     }
 
 
@@ -288,12 +290,20 @@ updateGame msg ({ gameModel } as model) =
 
                     else
                         ( Time.millisToPosix newTime, gameModel.status )
+
+                newToShowJump =
+                    if gameModel.toShowJump > 0 then
+                        gameModel.toShowJump - 1
+
+                    else
+                        gameModel.toShowJump
             in
             ( { model
                 | gameModel =
                     { gameModel
                         | currentTime = newCurrent
                         , status = newStatus
+                        , toShowJump = newToShowJump
                     }
               }
             , Cmd.none
@@ -365,7 +375,10 @@ updateGame msg ({ gameModel } as model) =
                     Just word ->
                         ( { model
                             | gameModel =
-                                { newGameModel | word = word }
+                                { newGameModel
+                                    | word = word
+                                    , toShowJump = 5
+                                }
                           }
                         , Cmd.none
                         )
@@ -526,7 +539,17 @@ viewPlaying { gameModel } =
         , layoutGridInner []
             [ layoutGridCell [ span12 ]
                 [ span [ class "action-button" ] [ viewPlayingButton "done" Correct ]
-                , span [ class "action-button" ] [ viewPlayingButton "redo" Jump ]
+                , span [ class "action-button" ]
+                    [ if gameModel.toShowJump == 0 then
+                        viewPlayingButton "redo" Jump
+
+                      else
+                        extendedFab
+                            { extendedFabConfig
+                                | additionalAttributes = [ disabled True ]
+                            }
+                            (String.fromInt gameModel.toShowJump)
+                    ]
                 ]
             ]
         , h5 [ headline5 ] [ text <| "Acertou " ++ String.fromInt gameModel.score ]
