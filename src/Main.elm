@@ -30,6 +30,7 @@ type alias Model =
     , preparingModel : PreparingModel
     , gameModel : GameModel
     , tapGuard : TapGuard
+    , correctGuard : TapGuard
     }
 
 
@@ -95,6 +96,7 @@ init =
       , preparingModel = initPreparing
       , gameModel = initGame
       , tapGuard = { locked = False, token = 0 }
+      , correctGuard = { locked = False, token = 0 }
       }
     , Cmd.none
     )
@@ -182,6 +184,7 @@ type Msg
     | PreparingMsg PreparingMsg
     | GameMsg GameMsg
     | ReleaseTaps Int
+    | ReleaseCorrect Int
 
 
 type PreparingMsg
@@ -285,6 +288,13 @@ update msg ({ preparingModel, gameModel } as model) =
             else
                 ( model, Cmd.none )
 
+        ReleaseCorrect token ->
+            if token == model.correctGuard.token then
+                ( { model | correctGuard = { locked = False, token = token } }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
+
 
 updatePreparing : PreparingMsg -> Model -> ( Model, Cmd Msg )
 updatePreparing msg ({ preparingModel } as model) =
@@ -376,6 +386,7 @@ acceptsGameMsg msg model =
     case screen of
         Just status ->
             not model.tapGuard.locked
+                && not (msg == Correct && model.correctGuard.locked)
                 && model.status == Playing
                 && model.gameModel.status == status
 
@@ -470,25 +481,27 @@ updateGame msg ({ gameModel } as model) =
                 |> lockTaps
 
         Correct ->
-            ( { model
-                | gameModel =
-                    { gameModel
-                        | score = gameModel.score + 1
-                        , history = ( gameModel.word, Guessed ) :: gameModel.history
-                    }
-              }
+            ( holdCorrect
+                { model
+                    | gameModel =
+                        { gameModel
+                            | score = gameModel.score + 1
+                            , history = ( gameModel.word, Guessed ) :: gameModel.history
+                        }
+                }
             , Cmd.batch [ newWordIndex gameModel, vibrate [ 30 ] ]
             )
 
         Jump ->
             if canSkip gameModel then
-                ( { model
-                    | gameModel =
-                        { gameModel
-                            | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost)
-                            , history = ( gameModel.word, Missed ) :: gameModel.history
-                        }
-                  }
+                ( holdCorrect
+                    { model
+                        | gameModel =
+                            { gameModel
+                                | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost)
+                                , history = ( gameModel.word, Missed ) :: gameModel.history
+                            }
+                    }
                 , newWordIndex gameModel
                 )
 
@@ -533,6 +546,7 @@ updateGame msg ({ gameModel } as model) =
                           }
                         , Cmd.none
                         )
+                            |> lockCorrect
 
                     Nothing ->
                         ( model, Cmd.none )
@@ -1096,6 +1110,26 @@ lockTaps ( { tapGuard } as model, cmd ) =
         [ cmd
         , Process.sleep tapGuardMillis
             |> Task.perform (\_ -> ReleaseTaps token)
+        ]
+    )
+
+
+holdCorrect : Model -> Model
+holdCorrect ({ correctGuard } as model) =
+    { model | correctGuard = { locked = True, token = correctGuard.token + 1 } }
+
+
+lockCorrect : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+lockCorrect ( model, cmd ) =
+    let
+        ({ correctGuard } as heldModel) =
+            holdCorrect model
+    in
+    ( heldModel
+    , Cmd.batch
+        [ cmd
+        , Process.sleep tapGuardMillis
+            |> Task.perform (\_ -> ReleaseCorrect correctGuard.token)
         ]
     )
 
