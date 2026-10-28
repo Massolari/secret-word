@@ -16,7 +16,7 @@
 - [x] 3.1 Rodar `yarn start` e jogar uma rodada de 1min. Verificar os cenários "Pular logo que a palavra aparece" e "Pulos seguidos" do spec: o botão funciona assim que a palavra aparece, cada toque tira 5 s do cronômetro e da barra, e o contador de acertos não muda.
 - [x] 3.2 Na mesma rodada, pular até restar pouco tempo. Verificar os cenários "Limite exato", "Tempo insuficiente" e "Pulo leva aos últimos segundos": o alerta aparece ao cruzar 10 s, e com 5 s ou menos o botão fica desabilitado sem trocar a palavra.
 - [x] 3.3 Deixar o tempo acabar e verificar na tela de fim que o histórico lista as palavras puladas como erro e a última palavra uma única vez.
-- [ ] 3.4 Com um leitor de tela (VoiceOver), verificar que o botão é anunciado como "Pular (perde 5 segundos)" e como indisponível quando desabilitado.
+- [x] 3.4 Com um leitor de tela (VoiceOver), verificar que o botão é anunciado como "Pular (perde 5 segundos)" e como indisponível quando desabilitado.
 
 ## Workflow follow-up
 
