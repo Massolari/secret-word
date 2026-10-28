@@ -1,20 +1,17 @@
-module Main exposing (..)
+port module Main exposing (..)
 
 import Array exposing (Array)
 import Browser
+import Browser.Dom
 import Dict exposing (Dict)
-import Html exposing (Html, form, h4, h5, p, span, text)
-import Html.Attributes exposing (attribute, class, novalidate, style, type_)
-import Html.Events exposing (onSubmit)
-import Material.Button as Button
-import Material.Fab as Fab
-import Material.IconButton as IconButton
-import Material.LayoutGrid as LayoutGrid
-import Material.List as MList
-import Material.List.Item as MListItem exposing (ListItem)
-import Material.TextField as TextField
-import Material.Typography exposing (headline4, headline5)
+import Html exposing (Html, button, div, fieldset, form, h1, h2, input, label, legend, li, ol, p, section, span, text, ul)
+import Html.Attributes exposing (attribute, autocomplete, checked, class, classList, disabled, id, maxlength, name, novalidate, placeholder, type_, value)
+import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
+import Html.Keyed as Keyed
+import Icons
+import Process
 import Random exposing (Generator)
+import Set exposing (Set)
 import Task
 import Time
 import Words
@@ -31,14 +28,14 @@ type alias Model =
     , players : Dict Int Player
     , preparingModel : PreparingModel
     , gameModel : GameModel
-    , zone : Time.Zone
     }
 
 
 type alias PreparingModel =
-    { time : String
+    { roundSeconds : Int
     , currentId : Int
     , playerName : String
+    , removing : Set Int
     }
 
 
@@ -81,17 +78,17 @@ init =
       , players = Dict.empty
       , preparingModel = initPreparing
       , gameModel = initGame
-      , zone = Time.utc
       }
-    , Task.perform AdjustTimeZone Time.here
+    , Cmd.none
     )
 
 
 initPreparing : PreparingModel
 initPreparing =
-    { time = ""
+    { roundSeconds = 60
     , currentId = 0
     , playerName = ""
+    , removing = Set.empty
     }
 
 
@@ -112,6 +109,33 @@ initGame =
     }
 
 
+roundPresets : List ( Int, String )
+roundPresets =
+    [ ( 30, "30s" )
+    , ( 60, "1min" )
+    , ( 90, "1min30" )
+    , ( 120, "2min" )
+    , ( 180, "3min" )
+    ]
+
+
+playerNameInputId : String
+playerNameInputId =
+    "player-name"
+
+
+
+-----------
+-- Ports --
+-----------
+
+
+port vibrate : List Int -> Cmd msg
+
+
+port keepAwake : Bool -> Cmd msg
+
+
 
 ---------
 -- Msg --
@@ -120,15 +144,16 @@ initGame =
 
 type Msg
     = Start
-    | AdjustTimeZone Time.Zone
+    | NoOp
     | PreparingMsg PreparingMsg
     | GameMsg GameMsg
 
 
 type PreparingMsg
-    = InputTime String
+    = SelectTime Int
     | InputPlayer String
     | DeletePlayer Int
+    | RemovePlayer Int
     | AddUser
 
 
@@ -152,8 +177,11 @@ update msg ({ preparingModel, gameModel } as model) =
     case msg of
         Start ->
             let
+                players =
+                    activePlayers model
+
                 playersList =
-                    model.players
+                    players
                         |> Dict.toList
 
                 playersOrder =
@@ -173,25 +201,8 @@ update msg ({ preparingModel, gameModel } as model) =
                             )
                             Array.empty
 
-                timeSplitted =
-                    String.split ":" preparingModel.time
-
-                minutes =
-                    timeSplitted
-                        |> List.head
-                        |> Maybe.andThen String.toInt
-                        |> Maybe.withDefault 0
-
-                seconds =
-                    timeSplitted
-                        |> List.reverse
-                        |> List.head
-                        |> Maybe.andThen String.toInt
-                        |> Maybe.withDefault 0
-
                 time =
-                    ((minutes * 60 * 1000) + (seconds * 1000))
-                        |> Time.millisToPosix
+                    Time.millisToPosix (preparingModel.roundSeconds * 1000)
 
                 ( questioner, guesser ) =
                     getCurrentPlayers gameModel.currentPlayersIndex playersOrder
@@ -206,13 +217,15 @@ update msg ({ preparingModel, gameModel } as model) =
                         , guesser = guesser
                         , generator = randomWord <| Array.length Words.words
                     }
+                , players = players
+                , preparingModel = { preparingModel | removing = Set.empty }
                 , status = Playing
               }
             , Cmd.none
             )
 
-        AdjustTimeZone zone ->
-            ( { model | zone = zone }, Cmd.none )
+        NoOp ->
+            ( model, Cmd.none )
 
         PreparingMsg preparingMsg ->
             updatePreparing preparingMsg model
@@ -224,10 +237,10 @@ update msg ({ preparingModel, gameModel } as model) =
 updatePreparing : PreparingMsg -> Model -> ( Model, Cmd Msg )
 updatePreparing msg ({ preparingModel } as model) =
     case msg of
-        InputTime time ->
+        SelectTime seconds ->
             ( { model
                 | preparingModel =
-                    { preparingModel | time = time }
+                    { preparingModel | roundSeconds = seconds }
               }
             , Cmd.none
             )
@@ -242,22 +255,41 @@ updatePreparing msg ({ preparingModel } as model) =
 
         DeletePlayer id ->
             ( { model
+                | preparingModel =
+                    { preparingModel | removing = Set.insert id preparingModel.removing }
+              }
+            , Process.sleep 200
+                |> Task.perform (\_ -> PreparingMsg (RemovePlayer id))
+            )
+
+        RemovePlayer id ->
+            ( { model
                 | players = Dict.remove id model.players
+                , preparingModel =
+                    { preparingModel | removing = Set.remove id preparingModel.removing }
               }
             , Cmd.none
             )
 
         AddUser ->
-            ( { model
-                | players = Dict.insert preparingModel.currentId (newPlayer preparingModel.playerName) model.players
-                , preparingModel =
-                    { preparingModel
-                        | playerName = ""
-                        , currentId = preparingModel.currentId + 1
-                    }
-              }
-            , Cmd.none
-            )
+            let
+                playerName =
+                    String.trim preparingModel.playerName
+            in
+            if String.isEmpty playerName then
+                ( model, Cmd.none )
+
+            else
+                ( { model
+                    | players = Dict.insert preparingModel.currentId (newPlayer playerName) model.players
+                    , preparingModel =
+                        { preparingModel
+                            | playerName = ""
+                            , currentId = preparingModel.currentId + 1
+                        }
+                  }
+                , Task.attempt (always NoOp) (Browser.Dom.focus playerNameInputId)
+                )
 
 
 updateGame : GameMsg -> Model -> ( Model, Cmd Msg )
@@ -268,7 +300,7 @@ updateGame msg ({ gameModel } as model) =
                 | gameModel =
                     { gameModel | status = GamePlaying }
               }
-            , newWordIndex gameModel.generator
+            , Cmd.batch [ newWordIndex gameModel.generator, keepAwake True ]
             )
 
         Tick _ ->
@@ -300,7 +332,11 @@ updateGame msg ({ gameModel } as model) =
                         , toShowJump = newToShowJump
                     }
               }
-            , Cmd.none
+            , if newStatus == GameOver && gameModel.status /= GameOver then
+                Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ]
+
+              else
+                Cmd.none
             )
 
         Restart ->
@@ -347,7 +383,7 @@ updateGame msg ({ gameModel } as model) =
             ( { model
                 | gameModel = { gameModel | score = gameModel.score + 1 }
               }
-            , newWordIndex gameModel.generator
+            , Cmd.batch [ newWordIndex gameModel.generator, vibrate [ 30 ] ]
             )
 
         Jump ->
@@ -387,45 +423,96 @@ updateGame msg ({ gameModel } as model) =
 ----------
 
 
+type alias Screen =
+    { key : String
+    , header : Html Msg
+    , main : List (Html Msg)
+    , footer : List (Html Msg)
+    }
+
+
 view : Model -> Html Msg
 view model =
-    case model.status of
-        Preparing ->
-            viewPreparing model
+    let
+        screen =
+            case model.status of
+                Preparing ->
+                    viewPreparing model
 
-        Playing ->
-            viewGame model
+                Playing ->
+                    viewGame model
+    in
+    Keyed.node "div"
+        [ class "app" ]
+        [ ( screen.key ++ "-header", Html.header [ class "app__header" ] [ screen.header ] )
+        , ( screen.key ++ "-main", Html.main_ [ class "app__main" ] screen.main )
+        , ( screen.key ++ "-footer", Html.footer [ class "app__footer" ] screen.footer )
+        ]
 
 
-viewPreparing : Model -> Html Msg
-viewPreparing ({ preparingModel } as model) =
-    LayoutGrid.layoutGrid [ class "center" ]
-        [ LayoutGrid.inner []
-            [ LayoutGrid.cell [ LayoutGrid.span12 ] [ viewPrepareTime model ]
-            , LayoutGrid.cell [ LayoutGrid.span12 ] [ viewPreparePlayers model ]
-            , LayoutGrid.cell [ LayoutGrid.span12 ]
-                [ Button.raised
-                    (Button.config
-                        |> Button.setIcon (Just (Button.icon "play_arrow"))
-                        |> Button.setTrailingIcon True
-                        |> Button.setDisabled ((Dict.size model.players < 2) || String.isEmpty preparingModel.time)
-                        |> Button.setOnClick Start
-                    )
-                    "Começar"
-                ]
+viewPreparing : Model -> Screen
+viewPreparing model =
+    let
+        playersCount =
+            Dict.size (activePlayers model)
+
+        missing =
+            2 - playersCount
+    in
+    { key = "setup"
+    , header =
+        div [ class "brand" ]
+            [ h1 [ class "brand__title" ] [ text "Palavra Secreta" ]
+            , p [ class "brand__tagline" ] [ text "Dê dicas, adivinhe, pontue." ]
+            ]
+    , main =
+        [ viewPrepareTime model
+        , viewPreparePlayers model
+        ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , disabled (missing > 0)
+            , onClick Start
+            ]
+            [ text "Começar", Icons.play ]
+        , p [ class "hint", attribute "aria-live" "polite" ]
+            [ if missing == 1 then
+                text "Falta 1 jogador"
+
+              else if missing > 1 then
+                text <| "Faltam " ++ String.fromInt missing ++ " jogadores"
+
+              else
+                text ""
             ]
         ]
+    }
 
 
 viewPrepareTime : Model -> Html Msg
 viewPrepareTime model =
-    TextField.filled
-        (TextField.config
-            |> TextField.setLabel (Just "Tempo")
-            |> TextField.setType (Just "time")
-            |> TextField.setOnInput (PreparingMsg << InputTime)
-            |> TextField.setValue (Just model.preparingModel.time)
-        )
+    fieldset [ class "segmented" ]
+        [ legend [ class "section__title" ] [ text "Tempo da rodada" ]
+        , div [ class "segmented__options" ] <|
+            List.map
+                (\( seconds, labelText ) ->
+                    label [ class "segmented__option" ]
+                        [ input
+                            [ type_ "radio"
+                            , name "round-time"
+                            , class "visually-hidden"
+                            , value (String.fromInt seconds)
+                            , checked (seconds == model.preparingModel.roundSeconds)
+                            , onCheck (\_ -> PreparingMsg (SelectTime seconds))
+                            ]
+                            []
+                        , span [] [ text labelText ]
+                        ]
+                )
+                roundPresets
+        ]
 
 
 viewPreparePlayers : Model -> Html Msg
@@ -434,67 +521,73 @@ viewPreparePlayers ({ preparingModel } as model) =
         players =
             Dict.toList model.players
     in
-    LayoutGrid.cell []
-        [ form [ onSubmit (PreparingMsg AddUser), novalidate True ]
-            [ TextField.filled
-                (TextField.config
-                    |> TextField.setType (Just "text")
-                    |> TextField.setLabel (Just "Jogador")
-                    |> TextField.setOnInput (PreparingMsg << InputPlayer)
-                    |> TextField.setValue (Just preparingModel.playerName)
-                )
-            , Fab.fab
-                (Fab.config
-                    |> Fab.setOnClick (PreparingMsg AddUser)
-                    |> Fab.setExited (String.isEmpty preparingModel.playerName)
-                )
-                (Fab.icon "add")
+    section [ class "section" ]
+        [ h2 [ class "section__title" ]
+            [ text "Jogadores"
+            , span [ class "section__count" ] [ text <| String.fromInt (Dict.size (activePlayers model)) ]
             ]
-        , LayoutGrid.inner []
-            [ LayoutGrid.cell [ LayoutGrid.span12, class "center", class "list-inline-block" ]
-                [ viewList (MList.config |> MList.setInteractive False) <|
-                    List.map
-                        (\( id, player ) ->
-                            MListItem.listItem MListItem.config
-                                [ text player.name
-                                , MListItem.meta []
-                                    [ IconButton.iconButton
-                                        (IconButton.config |> IconButton.setOnClick (PreparingMsg <| DeletePlayer id))
-                                        (IconButton.icon "delete")
-                                    ]
-                                ]
-                        )
-                        players
+        , form [ class "add-player", onSubmit (PreparingMsg AddUser), novalidate True ]
+            [ input
+                [ id playerNameInputId
+                , class "field"
+                , type_ "text"
+                , placeholder "Nome do jogador"
+                , attribute "aria-label" "Nome do jogador"
+                , attribute "enterkeyhint" "done"
+                , attribute "autocapitalize" "words"
+                , autocomplete False
+                , maxlength 24
+                , value preparingModel.playerName
+                , onInput (PreparingMsg << InputPlayer)
                 ]
+                []
+            , button
+                [ type_ "submit"
+                , class "btn btn--primary btn--icon"
+                , attribute "aria-label" "Adicionar jogador"
+                , disabled (String.isEmpty (String.trim preparingModel.playerName))
+                ]
+                [ Icons.plus ]
             ]
+        , if List.isEmpty players then
+            p [ class "empty" ]
+                [ Icons.users
+                , text "Adicione pelo menos 2 jogadores para começar."
+                ]
+
+          else
+            Keyed.ul [ class "players" ] <|
+                List.map (viewPlayer preparingModel.removing) players
         ]
 
 
-viewGame : Model -> Html Msg
+viewPlayer : Set Int -> ( Int, Player ) -> ( String, Html Msg )
+viewPlayer removing ( id, player ) =
+    let
+        leaving =
+            Set.member id removing
+    in
+    ( String.fromInt id
+    , li
+        [ classList [ ( "player", True ), ( "player--leaving", leaving ) ]
+        , avatarHue id
+        ]
+        [ viewAvatar player.name
+        , span [ class "player__name" ] [ text player.name ]
+        , button
+            [ type_ "button"
+            , class "btn btn--ghost btn--icon"
+            , attribute "aria-label" ("Remover " ++ player.name)
+            , disabled leaving
+            , onClick (PreparingMsg <| DeletePlayer id)
+            ]
+            [ Icons.trash ]
+        ]
+    )
+
+
+viewGame : Model -> Screen
 viewGame ({ gameModel } as model) =
-    LayoutGrid.layoutGrid [ class "center" ]
-        [ h5 [ headline5 ] [ text <| getTimeString gameModel.currentTime model.zone ]
-        , viewGameContent model
-        , LayoutGrid.inner []
-            [ LayoutGrid.cell [ LayoutGrid.span12, class "center", class "list-inline-block" ]
-                [ viewList (MList.config |> MList.setInteractive False |> MList.setTwoLine True) <|
-                    List.map
-                        (\player ->
-                            MListItem.listItem MListItem.config
-                                [ MListItem.text []
-                                    { primary = [ text player.name ]
-                                    , secondary = [ text <| "Pontuação: " ++ String.fromInt player.score ]
-                                    }
-                                ]
-                        )
-                        (Dict.values model.players |> List.sortBy .score |> List.reverse)
-                ]
-            ]
-        ]
-
-
-viewGameContent : Model -> Html Msg
-viewGameContent ({ gameModel } as model) =
     case gameModel.status of
         GameShowingPlayers ->
             viewGameShowingPlayers model
@@ -506,77 +599,239 @@ viewGameContent ({ gameModel } as model) =
             viewGameOver model
 
 
-viewGameShowingPlayers : Model -> Html Msg
-viewGameShowingPlayers { gameModel } =
+viewGameShowingPlayers : Model -> Screen
+viewGameShowingPlayers ({ gameModel } as model) =
     let
         ( questioner, guesser ) =
             ( Tuple.second gameModel.questioner
             , Tuple.second gameModel.guesser
             )
     in
-    LayoutGrid.cell []
-        [ h5 [ headline5 ]
-            [ text <| questioner ++ " dá dicas para " ++ guesser ++ " adivinhar a palavra" ]
-        , Button.raised
-            (Button.config
-                |> Button.setIcon (Just (Button.icon "play_arrow"))
-                |> Button.setTrailingIcon True
-                |> Button.setOnClick (GameMsg Play)
-            )
-            "Começar"
+    { key = "pair-" ++ String.fromInt gameModel.currentPlayersIndex
+    , header =
+        div [ class "topbar" ]
+            [ span [ class "topbar__title" ] [ text "Palavra Secreta" ]
+            , span [ class "time-chip", attribute "aria-label" "Tempo da rodada" ]
+                [ Icons.clock, text <| getTimeString gameModel.currentTime ]
+            ]
+    , main =
+        [ div [ class "card pair" ]
+            [ p [ class "pair__role" ] [ text "Dá as dicas" ]
+            , p [ class "pair__name" ] [ text questioner ]
+            , span [ class "pair__arrow" ] [ Icons.arrowDown ]
+            , p [ class "pair__role" ] [ text "Adivinha" ]
+            , p [ class "pair__name" ] [ text guesser ]
+            ]
+        , viewScoreboard model
         ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick (GameMsg Play)
+            ]
+            [ text "Começar rodada", Icons.play ]
+        ]
+    }
 
 
-viewPlaying : Model -> Html Msg
+viewPlaying : Model -> Screen
 viewPlaying { gameModel } =
-    LayoutGrid.cell []
-        [ h4 [ headline4 ]
-            [ text gameModel.word ]
-        , LayoutGrid.inner []
-            [ LayoutGrid.cell [ LayoutGrid.span12 ]
-                [ span [ class "action-button" ] [ viewPlayingButton "done" Correct ]
-                , span [ class "action-button", class "action-button--skip" ]
-                    [ if gameModel.toShowJump == 0 then
-                        viewPlayingButton "redo" Jump
+    { key = "round"
+    , header = viewTimer gameModel
+    , main =
+        [ div [ class "round" ]
+            [ p [ class "round__pair" ]
+                [ text <| Tuple.second gameModel.questioner ++ " dá dicas para " ++ Tuple.second gameModel.guesser ]
+            , Keyed.node "div"
+                [ class "word-stage", attribute "aria-live" "polite" ]
+                [ ( String.fromInt (List.length gameModel.drawnIndex)
+                  , p [ class "word" ] [ text gameModel.word ]
+                  )
+                ]
+            , div [ class "counter" ]
+                [ Keyed.node "span"
+                    []
+                    [ ( String.fromInt gameModel.score
+                      , span
+                            [ classList [ ( "counter__num", True ), ( "counter__num--pop", gameModel.score > 0 ) ] ]
+                            [ text <| String.fromInt gameModel.score ]
+                      )
+                    ]
+                , span []
+                    [ text <|
+                        if gameModel.score == 1 then
+                            "acerto"
 
-                      else
-                        Fab.fab
-                            (Fab.config |> Fab.setAttributes [ class "fab--disabled", attribute "aria-disabled" "true" ])
-                            (Fab.customIcon span [] [ text <| String.fromInt gameModel.toShowJump ])
+                        else
+                            "acertos"
                     ]
                 ]
             ]
-        , h5 [ headline5 ] [ text <| "Acertou " ++ String.fromInt gameModel.score ]
+        ]
+    , footer =
+        [ div [ class "actions" ]
+            [ viewSkipButton gameModel.toShowJump
+            , button
+                [ type_ "button"
+                , class "btn btn--success btn--lg"
+                , onClick (GameMsg Correct)
+                ]
+                [ Icons.check, text "Acertou" ]
+            ]
+        ]
+    }
+
+
+viewTimer : GameModel -> Html Msg
+viewTimer gameModel =
+    let
+        remaining =
+            Time.posixToMillis gameModel.currentTime
+
+        total =
+            Time.posixToMillis gameModel.time
+
+        progress =
+            if total > 0 then
+                toFloat remaining / toFloat total
+
+            else
+                0
+    in
+    div
+        [ classList [ ( "timer", True ), ( "timer--alert", remaining <= 10000 ) ]
+        , attribute "role" "timer"
+        , attribute "aria-label" "Tempo restante"
+        ]
+        [ span [ class "timer__time" ] [ text <| getTimeString gameModel.currentTime ]
+        , div [ class "timer__bar" ]
+            [ div [ class "timer__fill", progressStyle progress ] [] ]
         ]
 
 
-viewPlayingButton : String -> GameMsg -> Html Msg
-viewPlayingButton icon msg =
-    Fab.fab
-        (Fab.config |> Fab.setOnClick (GameMsg msg))
-        (Fab.icon icon)
+viewSkipButton : Int -> Html Msg
+viewSkipButton toShowJump =
+    if toShowJump == 0 then
+        button
+            [ type_ "button"
+            , class "btn btn--secondary btn--lg"
+            , onClick (GameMsg Jump)
+            ]
+            [ Icons.skip, text "Pular" ]
+
+    else
+        button
+            [ type_ "button"
+            , class "btn btn--secondary btn--lg"
+            , disabled True
+            , attribute "aria-label" ("Pular disponível em " ++ String.fromInt toShowJump ++ " segundos")
+            ]
+            [ span [ class "skip-ring", progressStyle (toFloat toShowJump / 5) ]
+                [ span [ class "skip-ring__num" ] [ text <| String.fromInt toShowJump ] ]
+            , text "Pular"
+            ]
 
 
-viewGameOver : Model -> Html Msg
-viewGameOver { gameModel } =
+viewGameOver : Model -> Screen
+viewGameOver ({ gameModel } as model) =
     let
-        ( questioner, guesser ) =
-            ( Tuple.second gameModel.questioner
-            , Tuple.second gameModel.guesser
-            )
+        ( ( questionerId, questioner ), ( guesserId, guesser ) ) =
+            ( gameModel.questioner, gameModel.guesser )
 
         questionerScore =
             gameModel.score // 2
     in
-    LayoutGrid.cell []
-        [ h5 [ headline5 ]
-            [ p [] [ text <| guesser ++ " fez " ++ String.fromInt gameModel.score ++ " pontos" ]
-            , p [] [ text <| questioner ++ " fez " ++ String.fromInt questionerScore ++ " pontos" ]
+    { key = "over"
+    , header =
+        div []
+            [ h1 [ class "over__title" ] [ text "Tempo esgotado!" ]
+            , p [ class "over__subtitle" ] [ text "Pontos desta rodada" ]
             ]
-        , Button.raised
-            (Button.config |> Button.setOnClick (GameMsg Restart))
-            "Continuar"
+    , main =
+        [ div [ class "card result" ]
+            [ viewResultRow guesserId guesser "adivinhou" gameModel.score
+            , viewResultRow questionerId questioner "deu as dicas" questionerScore
+            ]
+        , viewScoreboard model
         ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick (GameMsg Restart)
+            ]
+            [ text "Continuar" ]
+        ]
+    }
+
+
+viewResultRow : Int -> String -> String -> Int -> Html Msg
+viewResultRow id playerName role points =
+    div [ class "result__row", avatarHue id ]
+        [ viewAvatar playerName
+        , div [ class "result__who" ]
+            [ p [ class "result__name" ] [ text playerName ]
+            , p [ class "result__role" ] [ text role ]
+            ]
+        , span [ class "result__points" ] [ text <| "+" ++ String.fromInt points ]
+        ]
+
+
+viewScoreboard : Model -> Html Msg
+viewScoreboard model =
+    let
+        players =
+            Dict.toList model.players
+                |> List.sortBy (\( _, player ) -> negate player.score)
+
+        topScore =
+            players
+                |> List.map (Tuple.second >> .score)
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    section [ class "section" ]
+        [ h2 [ class "section__title" ] [ text "Placar" ]
+        , ol [ class "card scoreboard" ] <|
+            List.indexedMap
+                (\index ( id, player ) ->
+                    let
+                        leader =
+                            topScore > 0 && player.score == topScore
+                    in
+                    li
+                        [ classList [ ( "scoreboard__row", True ), ( "scoreboard__row--leader", leader ) ]
+                        , avatarHue id
+                        ]
+                        [ span [ class "scoreboard__pos" ]
+                            [ if leader then
+                                Icons.trophy
+
+                              else
+                                text <| String.fromInt (index + 1)
+                            ]
+                        , viewAvatar player.name
+                        , span [ class "scoreboard__name" ] [ text player.name ]
+                        , span [ class "scoreboard__score" ] [ text <| String.fromInt player.score ++ " pts" ]
+                        ]
+                )
+                players
+        ]
+
+
+viewAvatar : String -> Html msg
+viewAvatar playerName =
+    span [ class "avatar", attribute "aria-hidden" "true" ]
+        [ text <|
+            case String.uncons playerName of
+                Just ( initial, _ ) ->
+                    String.toUpper (String.fromChar initial)
+
+                Nothing ->
+                    ""
+        ]
+
 
 
 ------------
@@ -584,14 +839,19 @@ viewGameOver { gameModel } =
 ------------
 
 
-viewList : MList.Config msg -> List (ListItem msg) -> Html msg
-viewList config items =
-    case items of
-        [] ->
-            text ""
+activePlayers : Model -> Dict Int Player
+activePlayers model =
+    Dict.filter (\id _ -> not (Set.member id model.preparingModel.removing)) model.players
 
-        first :: rest ->
-            MList.list config first rest
+
+avatarHue : Int -> Html.Attribute msg
+avatarHue id =
+    attribute "style" ("--hue: " ++ String.fromInt (modBy 360 (230 + id * 67)))
+
+
+progressStyle : Float -> Html.Attribute msg
+progressStyle progress =
+    attribute "style" ("--progress: " ++ String.fromFloat progress)
 
 
 newPlayer : String -> Player
@@ -601,22 +861,17 @@ newPlayer name =
     }
 
 
-getTimeString : Time.Posix -> Time.Zone -> String
-getTimeString time zone =
+getTimeString : Time.Posix -> String
+getTimeString time =
     let
         pad =
             String.fromInt
                 >> String.padLeft 2 '0'
 
-        minutes =
-            Time.toMinute zone time
-                |> pad
-
-        seconds =
-            Time.toSecond zone time
-                |> pad
+        totalSeconds =
+            Time.posixToMillis time // 1000
     in
-    minutes ++ ":" ++ seconds
+    pad (totalSeconds // 60) ++ ":" ++ pad (modBy 60 totalSeconds)
 
 
 getCurrentPlayers : Int -> Array ( ( Int, String ), ( Int, String ) ) -> ( ( Int, String ), ( Int, String ) )
