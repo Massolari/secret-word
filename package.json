@@ -3,9 +3,15 @@
   "engines": {
     "node": ">=24"
   },
+  "targets": {
+    "default": {
+      "context": "browser"
+    }
+  },
   "devDependencies": {
     "@parcel/transformer-elm": "^2.16.4",
     "elm": "^0.19.3-0",
+    "material-components-web-elm": "9.1.0",
     "parcel": "^2.16.4"
   },
   "scripts": {

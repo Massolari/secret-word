@@ -1332,6 +1332,11 @@ lodash@^4.17.19:
   resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.18.1.tgz#ff2b66c1f6326d59513de2407bf881439812771c"
   integrity sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==
 
+material-components-web-elm@9.1.0:
+  version "9.1.0"
+  resolved "https://registry.yarnpkg.com/material-components-web-elm/-/material-components-web-elm-9.1.0.tgz#eb01454fcbe3265b2b2d543229c7908eb9d4b01b"
+  integrity sha512-t+Xz8K9XKRUbMCiMIujYJ6f4mvATTaGGXbkKTOcei1YjN5/ICMil8lMRBCVPkZ42gZVaqG6Xx3Fkcb1Zvs4zEA==
+
 minimatch@^3.1.1:
   version "3.1.5"
   resolved "https://registry.yarnpkg.com/minimatch/-/minimatch-3.1.5.tgz#580c88f8d5445f2bd6aa8f3cadefa0de79fbd69e"

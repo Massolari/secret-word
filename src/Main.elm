@@ -4,14 +4,15 @@ import Array exposing (Array)
 import Browser
 import Dict exposing (Dict)
 import Html exposing (Html, form, h4, h5, p, span, text)
-import Html.Attributes exposing (class, disabled, novalidate, style, type_)
+import Html.Attributes exposing (attribute, class, novalidate, style, type_)
 import Html.Events exposing (onSubmit)
-import Material.Button exposing (buttonConfig, raisedButton)
-import Material.Fab exposing (extendedFab, extendedFabConfig, fab, fabConfig)
-import Material.IconButton exposing (iconButton, iconButtonConfig)
-import Material.LayoutGrid exposing (layoutGrid, layoutGridCell, layoutGridInner, span12, span3)
-import Material.List exposing (list, listConfig, listItem, listItemConfig, listItemMeta, listItemPrimaryText, listItemSecondaryText, listItemText)
-import Material.TextField exposing (textField, textFieldConfig)
+import Material.Button as Button
+import Material.Fab as Fab
+import Material.IconButton as IconButton
+import Material.LayoutGrid as LayoutGrid
+import Material.List as MList
+import Material.List.Item as MListItem exposing (ListItem)
+import Material.TextField as TextField
 import Material.Typography exposing (headline4, headline5)
 import Random exposing (Generator)
 import Task
@@ -398,18 +399,18 @@ view model =
 
 viewPreparing : Model -> Html Msg
 viewPreparing ({ preparingModel } as model) =
-    layoutGrid [ class "center" ]
-        [ layoutGridInner []
-            [ layoutGridCell [ span12 ] [ viewPrepareTime model ]
-            , layoutGridCell [ span12 ] [ viewPreparePlayers model ]
-            , layoutGridCell [ span12 ]
-                [ raisedButton
-                    { buttonConfig
-                        | icon = Just "play_arrow"
-                        , trailingIcon = True
-                        , disabled = (Dict.size model.players < 2) || String.isEmpty preparingModel.time
-                        , onClick = Just Start
-                    }
+    LayoutGrid.layoutGrid [ class "center" ]
+        [ LayoutGrid.inner []
+            [ LayoutGrid.cell [ LayoutGrid.span12 ] [ viewPrepareTime model ]
+            , LayoutGrid.cell [ LayoutGrid.span12 ] [ viewPreparePlayers model ]
+            , LayoutGrid.cell [ LayoutGrid.span12 ]
+                [ Button.raised
+                    (Button.config
+                        |> Button.setIcon (Just (Button.icon "play_arrow"))
+                        |> Button.setTrailingIcon True
+                        |> Button.setDisabled ((Dict.size model.players < 2) || String.isEmpty preparingModel.time)
+                        |> Button.setOnClick Start
+                    )
                     "Começar"
                 ]
             ]
@@ -418,13 +419,13 @@ viewPreparing ({ preparingModel } as model) =
 
 viewPrepareTime : Model -> Html Msg
 viewPrepareTime model =
-    textField
-        { textFieldConfig
-            | label = Just "Tempo"
-            , type_ = "time"
-            , onInput = Just (PreparingMsg << InputTime)
-            , value = model.preparingModel.time
-        }
+    TextField.filled
+        (TextField.config
+            |> TextField.setLabel (Just "Tempo")
+            |> TextField.setType (Just "time")
+            |> TextField.setOnInput (PreparingMsg << InputTime)
+            |> TextField.setValue (Just model.preparingModel.time)
+        )
 
 
 viewPreparePlayers : Model -> Html Msg
@@ -433,28 +434,37 @@ viewPreparePlayers ({ preparingModel } as model) =
         players =
             Dict.toList model.players
     in
-    layoutGridCell []
+    LayoutGrid.cell []
         [ form [ onSubmit (PreparingMsg AddUser), novalidate True ]
-            [ textField { textFieldConfig | type_ = "text", label = Just "Jogador", onInput = Just (PreparingMsg << InputPlayer), value = preparingModel.playerName }
-            , fab { fabConfig | onClick = Just (PreparingMsg AddUser), exited = String.isEmpty preparingModel.playerName } "add"
+            [ TextField.filled
+                (TextField.config
+                    |> TextField.setType (Just "text")
+                    |> TextField.setLabel (Just "Jogador")
+                    |> TextField.setOnInput (PreparingMsg << InputPlayer)
+                    |> TextField.setValue (Just preparingModel.playerName)
+                )
+            , Fab.fab
+                (Fab.config
+                    |> Fab.setOnClick (PreparingMsg AddUser)
+                    |> Fab.setExited (String.isEmpty preparingModel.playerName)
+                )
+                (Fab.icon "add")
             ]
-        , layoutGridInner []
-            [ layoutGridCell [ span12, class "center", class "list-inline-block" ]
-                [ if List.isEmpty players then
-                    text ""
-
-                  else
-                    list { listConfig | nonInteractive = True } <|
-                        List.map
-                            (\( id, player ) ->
-                                listItem listItemConfig
-                                    [ text player.name
-                                    , listItemMeta []
-                                        [ iconButton { iconButtonConfig | onClick = Just <| PreparingMsg <| DeletePlayer id } "delete"
-                                        ]
+        , LayoutGrid.inner []
+            [ LayoutGrid.cell [ LayoutGrid.span12, class "center", class "list-inline-block" ]
+                [ viewList (MList.config |> MList.setInteractive False) <|
+                    List.map
+                        (\( id, player ) ->
+                            MListItem.listItem MListItem.config
+                                [ text player.name
+                                , MListItem.meta []
+                                    [ IconButton.iconButton
+                                        (IconButton.config |> IconButton.setOnClick (PreparingMsg <| DeletePlayer id))
+                                        (IconButton.icon "delete")
                                     ]
-                            )
-                            players
+                                ]
+                        )
+                        players
                 ]
             ]
         ]
@@ -462,21 +472,19 @@ viewPreparePlayers ({ preparingModel } as model) =
 
 viewGame : Model -> Html Msg
 viewGame ({ gameModel } as model) =
-    layoutGrid [ class "center" ]
+    LayoutGrid.layoutGrid [ class "center" ]
         [ h5 [ headline5 ] [ text <| getTimeString gameModel.currentTime model.zone ]
         , viewGameContent model
-        , layoutGridInner []
-            [ layoutGridCell [ span12, class "center", class "list-inline-block" ]
-                [ list { listConfig | nonInteractive = True, twoLine = True } <|
+        , LayoutGrid.inner []
+            [ LayoutGrid.cell [ LayoutGrid.span12, class "center", class "list-inline-block" ]
+                [ viewList (MList.config |> MList.setInteractive False |> MList.setTwoLine True) <|
                     List.map
                         (\player ->
-                            listItem listItemConfig
-                                [ listItemText []
-                                    [ listItemPrimaryText []
-                                        [ text player.name ]
-                                    , listItemSecondaryText []
-                                        [ text <| "Pontuação: " ++ String.fromInt player.score ]
-                                    ]
+                            MListItem.listItem MListItem.config
+                                [ MListItem.text []
+                                    { primary = [ text player.name ]
+                                    , secondary = [ text <| "Pontuação: " ++ String.fromInt player.score ]
+                                    }
                                 ]
                         )
                         (Dict.values model.players |> List.sortBy .score |> List.reverse)
@@ -506,37 +514,35 @@ viewGameShowingPlayers { gameModel } =
             , Tuple.second gameModel.guesser
             )
     in
-    layoutGridCell []
+    LayoutGrid.cell []
         [ h5 [ headline5 ]
             [ text <| questioner ++ " dá dicas para " ++ guesser ++ " adivinhar a palavra" ]
-        , raisedButton
-            { buttonConfig
-                | icon = Just "play_arrow"
-                , trailingIcon = True
-                , onClick = Just (GameMsg Play)
-            }
+        , Button.raised
+            (Button.config
+                |> Button.setIcon (Just (Button.icon "play_arrow"))
+                |> Button.setTrailingIcon True
+                |> Button.setOnClick (GameMsg Play)
+            )
             "Começar"
         ]
 
 
 viewPlaying : Model -> Html Msg
 viewPlaying { gameModel } =
-    layoutGridCell []
+    LayoutGrid.cell []
         [ h4 [ headline4 ]
             [ text gameModel.word ]
-        , layoutGridInner []
-            [ layoutGridCell [ span12 ]
+        , LayoutGrid.inner []
+            [ LayoutGrid.cell [ LayoutGrid.span12 ]
                 [ span [ class "action-button" ] [ viewPlayingButton "done" Correct ]
-                , span [ class "action-button" ]
+                , span [ class "action-button", class "action-button--skip" ]
                     [ if gameModel.toShowJump == 0 then
                         viewPlayingButton "redo" Jump
 
                       else
-                        extendedFab
-                            { extendedFabConfig
-                                | additionalAttributes = [ disabled True ]
-                            }
-                            (String.fromInt gameModel.toShowJump)
+                        Fab.fab
+                            (Fab.config |> Fab.setAttributes [ class "fab--disabled", attribute "aria-disabled" "true" ])
+                            (Fab.customIcon span [] [ text <| String.fromInt gameModel.toShowJump ])
                     ]
                 ]
             ]
@@ -546,9 +552,9 @@ viewPlaying { gameModel } =
 
 viewPlayingButton : String -> GameMsg -> Html Msg
 viewPlayingButton icon msg =
-    fab
-        { fabConfig | onClick = Just (GameMsg msg) }
-        icon
+    Fab.fab
+        (Fab.config |> Fab.setOnClick (GameMsg msg))
+        (Fab.icon icon)
 
 
 viewGameOver : Model -> Html Msg
@@ -562,23 +568,30 @@ viewGameOver { gameModel } =
         questionerScore =
             gameModel.score // 2
     in
-    layoutGridCell []
+    LayoutGrid.cell []
         [ h5 [ headline5 ]
             [ p [] [ text <| guesser ++ " fez " ++ String.fromInt gameModel.score ++ " pontos" ]
             , p [] [ text <| questioner ++ " fez " ++ String.fromInt questionerScore ++ " pontos" ]
             ]
-        , raisedButton
-            { buttonConfig
-                | onClick = Just (GameMsg Restart)
-            }
+        , Button.raised
+            (Button.config |> Button.setOnClick (GameMsg Restart))
             "Continuar"
         ]
-
 
 
 ------------
 -- Helper --
 ------------
+
+
+viewList : MList.Config msg -> List (ListItem msg) -> Html msg
+viewList config items =
+    case items of
+        [] ->
+            text ""
+
+        first :: rest ->
+            MList.list config first rest
 
 
 newPlayer : String -> Player
