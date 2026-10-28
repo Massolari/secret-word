@@ -20,6 +20,6 @@
 - [x] 3.1 Rodar `yarn start`, começar uma rodada de 30s, trocar de aba com cerca de 15 s restantes, esperar 30 s e voltar. Verificar os cenários "Troca de aba" e "Volta para o jogo": a rodada está pausada, mostra o mesmo tempo e não terminou.
 - [x] 3.2 Tocar em Continuar rodada e verificar o cenário "Retomar": mesma palavra, mesmo contador, a contagem segue do tempo pausado, e um bloqueio do Pular que estava pela metade continua de onde parou.
 - [x] 3.3 Numa rodada de 30s sem sair da tela, cronometrar do toque em Começar rodada até a tela de fim e verificar que dá 30 s com margem de até 1 s. Repetir com a CPU limitada a 6x no DevTools (Performance) para cobrir o cenário "Navegador lento".
-- [ ] 3.4 Num celular (ou no modo dispositivo do DevTools), bloquear a tela durante a rodada e desbloquear depois de 1 min. Verificar o cenário "Tela bloqueada": a rodada está pausada com o tempo de antes, e a tela segue o bloqueio do aparelho enquanto está pausada.
+- [x] 3.4 Num celular (ou no modo dispositivo do DevTools), bloquear a tela durante a rodada e desbloquear depois de 1 min. Verificar o cenário "Tela bloqueada": a rodada está pausada com o tempo de antes, e a tela segue o bloqueio do aparelho enquanto está pausada.
 - [x] 3.5 Trocar de aba no anúncio da dupla e no fim da rodada e verificar o cenário "Fora da rodada": nada muda ao voltar.
 - [x] 3.6 Rodar `yarn build` e verificar que o build termina sem erros.
