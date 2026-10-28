@@ -10,7 +10,7 @@ import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Html.Keyed as Keyed
 import Icons
 import Process
-import Random exposing (Generator)
+import Random
 import Set exposing (Set)
 import Task
 import Time
@@ -50,8 +50,9 @@ type alias GameModel =
     , questioner : ( Int, String )
     , guesser : ( Int, String )
     , status : GameStatus
-    , generator : Generator Int
-    , drawnIndex : List Int
+    , drawnIndex : Set Int
+    , currentIndex : Maybe Int
+    , drawCount : Int
     , history : List ( String, WordResult )
     }
 
@@ -116,8 +117,9 @@ initGame =
     , questioner = ( 0, "Não encontrado" )
     , guesser = ( 0, "Não encontrado" )
     , status = GameShowingPlayers
-    , generator = randomWord <| Array.length Words.words
-    , drawnIndex = []
+    , drawnIndex = Set.empty
+    , currentIndex = Nothing
+    , drawCount = 0
     , history = []
     }
 
@@ -248,7 +250,6 @@ update msg ({ preparingModel, gameModel } as model) =
                             , playersOrder = playersOrder
                             , questioner = questioner
                             , guesser = guesser
-                            , generator = randomWord <| Array.length Words.words
                         }
                     , players = players
                     , preparingModel = { preparingModel | removing = Set.empty }
@@ -378,7 +379,7 @@ updateGame msg ({ gameModel } as model) =
                 | gameModel =
                     { gameModel | status = GamePlaying }
               }
-            , Cmd.batch [ newWordIndex gameModel.generator, keepAwake True ]
+            , Cmd.batch [ newWordIndex gameModel, keepAwake True ]
             )
                 |> lockTaps
 
@@ -473,7 +474,7 @@ updateGame msg ({ gameModel } as model) =
                         , history = ( gameModel.word, Guessed ) :: gameModel.history
                     }
               }
-            , Cmd.batch [ newWordIndex gameModel.generator, vibrate [ 30 ] ]
+            , Cmd.batch [ newWordIndex gameModel, vibrate [ 30 ] ]
             )
 
         Jump ->
@@ -485,35 +486,53 @@ updateGame msg ({ gameModel } as model) =
                             , history = ( gameModel.word, Missed ) :: gameModel.history
                         }
                   }
-                , newWordIndex gameModel.generator
+                , newWordIndex gameModel
                 )
 
             else
                 ( model, Cmd.none )
 
         NewWordIndex index ->
-            if List.member index gameModel.drawnIndex then
-                ( model, newWordIndex gameModel.generator )
+            let
+                wordsCount =
+                    Array.length Words.words
+
+                cycleDone =
+                    Set.size gameModel.drawnIndex >= wordsCount
+
+                -- Resposta atrasada de um sorteio pedido antes do último aceito
+                stale =
+                    if cycleDone then
+                        wordsCount > 1 && gameModel.currentIndex == Just index
+
+                    else
+                        Set.member index gameModel.drawnIndex
+            in
+            if stale then
+                ( model, newWordIndex gameModel )
 
             else
-                let
-                    newDrawnIndex =
-                        index :: gameModel.drawnIndex
-
-                    newGameModel =
-                        { gameModel | drawnIndex = newDrawnIndex }
-                in
                 case Array.get index Words.words of
                     Just word ->
                         ( { model
                             | gameModel =
-                                { newGameModel | word = word }
+                                { gameModel
+                                    | word = word
+                                    , currentIndex = Just index
+                                    , drawnIndex =
+                                        if cycleDone then
+                                            Set.singleton index
+
+                                        else
+                                            Set.insert index gameModel.drawnIndex
+                                    , drawCount = gameModel.drawCount + 1
+                                }
                           }
                         , Cmd.none
                         )
 
                     Nothing ->
-                        ( { model | gameModel = newGameModel }, newWordIndex gameModel.generator )
+                        ( model, Cmd.none )
 
 
 
@@ -744,7 +763,7 @@ viewPlaying { gameModel } =
                 [ text <| Tuple.second gameModel.questioner ++ " dá dicas para " ++ Tuple.second gameModel.guesser ]
             , Keyed.node "div"
                 [ class "word-stage", attribute "aria-live" "polite" ]
-                [ ( String.fromInt (List.length gameModel.drawnIndex)
+                [ ( String.fromInt gameModel.drawCount
                   , p [ class "word" ] [ text gameModel.word ]
                   )
                 ]
@@ -1021,14 +1040,41 @@ getCurrentPlayers index players =
         |> Maybe.withDefault ( ( 0, "Error" ), ( 0, "Error" ) )
 
 
-randomWord : Int -> Generator Int
-randomWord arrayLength =
-    Random.int 0 arrayLength
+{-| Índices que podem ser sorteados: os que ainda não saíram na partida ou,
+com a lista esgotada, todos menos a palavra atual (novo ciclo).
+-}
+wordPool : Int -> Set Int -> Maybe Int -> List Int
+wordPool wordsCount drawn current =
+    let
+        allIndexes =
+            List.range 0 (wordsCount - 1)
+
+        remaining =
+            List.filter (\index -> not (Set.member index drawn)) allIndexes
+
+        newCycle =
+            List.filter (\index -> Just index /= current) allIndexes
+    in
+    if not (List.isEmpty remaining) then
+        remaining
+
+    else if not (List.isEmpty newCycle) then
+        newCycle
+
+    else
+        allIndexes
 
 
-newWordIndex : Generator Int -> Cmd Msg
-newWordIndex generator =
-    Random.generate (GameMsg << NewWordIndex) generator
+newWordIndex : GameModel -> Cmd Msg
+newWordIndex gameModel =
+    let
+        pool =
+            wordPool (Array.length Words.words) gameModel.drawnIndex gameModel.currentIndex
+                |> Array.fromList
+    in
+    Random.int 0 (Array.length pool - 1)
+        |> Random.map (\position -> Array.get position pool |> Maybe.withDefault -1)
+        |> Random.generate (GameMsg << NewWordIndex)
 
 
 
