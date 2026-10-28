@@ -41,16 +41,34 @@ Durante a rodada, tocar em Acertou SHALL somar 1 ao contador de acertos da rodad
 - **THEN** o contador mostra 3 com uma animação de incremento
 - **AND** uma nova palavra é exibida
 
-### Requirement: Pular com bloqueio
-O botão Pular SHALL ficar bloqueado nos primeiros 5 segundos de cada palavra, mostrando quantos segundos faltam e o progresso até liberar. Depois disso, tocar em Pular SHALL sortear uma nova palavra sem alterar o contador de acertos.
+### Requirement: Pular custa tempo
+Durante a rodada, o botão Pular SHALL estar disponível desde que a palavra aparece, sem espera, e SHALL indicar que pular custa 5 segundos. Tocar em Pular SHALL tirar 5 segundos do tempo restante da rodada e sortear uma nova palavra, sem alterar o contador de acertos. Quando restam 5 segundos ou menos, o botão SHALL ficar desabilitado e um toque nele SHALL NOT ter efeito.
 
-#### Scenario: Pular bloqueado
-- **WHEN** a palavra acabou de aparecer
-- **THEN** o botão Pular está desabilitado e mostra a contagem de 5 até 1
+#### Scenario: Pular logo que a palavra aparece
+- **WHEN** a palavra acabou de aparecer, restam 00:40 e o jogador toca em Pular
+- **THEN** o cronômetro passa a mostrar 00:35 e a barra de progresso diminui na mesma proporção
+- **AND** uma nova palavra é exibida e o contador de acertos não muda
 
-#### Scenario: Pular liberado
-- **WHEN** passaram 5 segundos desde que a palavra apareceu e o jogador toca em Pular
-- **THEN** uma nova palavra é exibida, o contador de acertos não muda e o bloqueio de 5 segundos recomeça
+#### Scenario: Pulos seguidos
+- **WHEN** restam 00:30 e o jogador toca em Pular duas vezes, sem esperar entre os toques
+- **THEN** o cronômetro passa a mostrar 00:20
+
+#### Scenario: Custo visível
+- **WHEN** a rodada está em andamento
+- **THEN** o botão Pular mostra que pular custa 5 segundos ("−5s")
+- **AND** um leitor de tela anuncia o botão como pular e perder 5 segundos
+
+#### Scenario: Tempo insuficiente
+- **WHEN** restam 5 segundos ou menos
+- **THEN** o botão Pular está desabilitado e tocar nele não muda a palavra nem o cronômetro
+
+#### Scenario: Limite exato
+- **WHEN** restam 00:06 e o jogador toca em Pular
+- **THEN** o cronômetro passa a mostrar 00:01 e o botão Pular fica desabilitado
+
+#### Scenario: Pulo leva aos últimos segundos
+- **WHEN** restam 00:14 e o jogador toca em Pular
+- **THEN** o cronômetro mostra 00:09 e o cronômetro e a barra mudam para a cor de alerta
 
 ### Requirement: Sorteio de palavras
 Sempre que a rodada precisa de uma nova palavra (início da rodada, Acertou ou Pular), o jogo SHALL sortear, com chances iguais, uma palavra da lista que ainda não saiu na partida. Toda palavra da lista SHALL poder ser sorteada. O sorteio SHALL terminar sem travar o app, por mais palavras que já tenham saído.
@@ -150,3 +168,32 @@ Enquanto uma rodada está em andamento, o jogo SHALL pedir ao navegador que mant
 #### Scenario: Fim da rodada
 - **WHEN** a rodada termina
 - **THEN** o jogo libera o pedido e a tela volta a seguir o tempo de bloqueio do aparelho
+
+### Requirement: Proteção contra toques na troca de tela
+Depois de cada troca de tela da partida (preparação → anúncio, anúncio → rodada, rodada → fim, fim → anúncio), os botões do rodapé da nova tela SHALL ignorar toques e teclas nos primeiros 500 ms e responder normalmente depois. A aparência dos botões SHALL NOT mudar por causa desse bloqueio. Uma ação SHALL valer só na tela a que pertence. Se a tela já trocou, a ação SHALL ser ignorada.
+
+#### Scenario: Acertou no fim do tempo
+- **WHEN** o tempo acaba enquanto o jogador toca repetidamente em Acertou, e um toque cai em Continuar até 500 ms depois da troca
+- **THEN** a tela de fim da rodada continua visível e o placar não muda
+- **AND** os pontos e o histórico da rodada não contam acertos depois do fim do tempo
+
+#### Scenario: Toque duplo em Continuar
+- **WHEN** o jogador toca duas vezes seguidas em Continuar
+- **THEN** a tela de anúncio da próxima dupla aparece e continua visível
+- **AND** a rodada não começa e o placar recebe os pontos da rodada uma vez só
+
+#### Scenario: Toque duplo em Começar rodada
+- **WHEN** o jogador toca duas vezes seguidas em Começar rodada
+- **THEN** a rodada começa com o contador de acertos em 0 e a primeira palavra não aparece como acerto no histórico
+
+#### Scenario: Toque duplo em Começar
+- **WHEN** com jogadores suficientes, o jogador toca duas vezes seguidas em Começar na preparação
+- **THEN** a tela de anúncio da primeira dupla aparece e continua visível
+
+#### Scenario: Botão liberado depois do bloqueio
+- **WHEN** passaram mais de 500 ms desde a troca de tela e o jogador toca no botão do rodapé
+- **THEN** a ação do botão acontece normalmente
+
+#### Scenario: Aparência durante o bloqueio
+- **WHEN** a tela acabou de trocar
+- **THEN** os botões do rodapé aparecem com o estilo normal, e não com o estilo de desabilitado

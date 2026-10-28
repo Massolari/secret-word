@@ -28,6 +28,7 @@ type alias Model =
     , players : Dict Int Player
     , preparingModel : PreparingModel
     , gameModel : GameModel
+    , tapGuard : TapGuard
     }
 
 
@@ -52,8 +53,13 @@ type alias GameModel =
     , drawnIndex : Set Int
     , currentIndex : Maybe Int
     , drawCount : Int
-    , toShowJump : Int
     , history : List ( String, WordResult )
+    }
+
+
+type alias TapGuard =
+    { locked : Bool
+    , token : Int
     }
 
 
@@ -85,6 +91,7 @@ init =
       , players = Dict.empty
       , preparingModel = initPreparing
       , gameModel = initGame
+      , tapGuard = { locked = False, token = 0 }
       }
     , Cmd.none
     )
@@ -113,9 +120,18 @@ initGame =
     , drawnIndex = Set.empty
     , currentIndex = Nothing
     , drawCount = 0
-    , toShowJump = 5
     , history = []
     }
+
+
+skipCost : Int
+skipCost =
+    5000
+
+
+canSkip : GameModel -> Bool
+canSkip gameModel =
+    Time.posixToMillis gameModel.currentTime > skipCost
 
 
 roundPresets : List ( Int, String )
@@ -126,6 +142,11 @@ roundPresets =
     , ( 120, "2min" )
     , ( 180, "3min" )
     ]
+
+
+tapGuardMillis : Float
+tapGuardMillis =
+    500
 
 
 playerNameInputId : String
@@ -156,6 +177,7 @@ type Msg
     | NoOp
     | PreparingMsg PreparingMsg
     | GameMsg GameMsg
+    | ReleaseTaps Int
 
 
 type PreparingMsg
@@ -185,52 +207,57 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ preparingModel, gameModel } as model) =
     case msg of
         Start ->
-            let
-                players =
-                    activePlayers model
+            if model.status /= Preparing then
+                ( model, Cmd.none )
 
-                playersList =
-                    players
-                        |> Dict.toList
+            else
+                let
+                    players =
+                        activePlayers model
 
-                playersOrder =
-                    playersList
-                        |> Array.fromList
-                        |> Array.foldl
-                            (\( id, player ) arr ->
-                                let
-                                    othersPlayers =
-                                        List.filter (Tuple.first >> (/=) id) playersList
+                    playersList =
+                        players
+                            |> Dict.toList
 
-                                    playerOrder =
-                                        List.map (\( i, p ) -> ( ( id, player.name ), ( i, p.name ) )) othersPlayers
-                                            |> Array.fromList
-                                in
-                                Array.append arr playerOrder
-                            )
-                            Array.empty
+                    playersOrder =
+                        playersList
+                            |> Array.fromList
+                            |> Array.foldl
+                                (\( id, player ) arr ->
+                                    let
+                                        othersPlayers =
+                                            List.filter (Tuple.first >> (/=) id) playersList
 
-                time =
-                    Time.millisToPosix (preparingModel.roundSeconds * 1000)
+                                        playerOrder =
+                                            List.map (\( i, p ) -> ( ( id, player.name ), ( i, p.name ) )) othersPlayers
+                                                |> Array.fromList
+                                    in
+                                    Array.append arr playerOrder
+                                )
+                                Array.empty
 
-                ( questioner, guesser ) =
-                    getCurrentPlayers gameModel.currentPlayersIndex playersOrder
-            in
-            ( { model
-                | gameModel =
-                    { gameModel
-                        | time = time
-                        , currentTime = time
-                        , playersOrder = playersOrder
-                        , questioner = questioner
-                        , guesser = guesser
-                    }
-                , players = players
-                , preparingModel = { preparingModel | removing = Set.empty }
-                , status = Playing
-              }
-            , Cmd.none
-            )
+                    time =
+                        Time.millisToPosix (preparingModel.roundSeconds * 1000)
+
+                    ( questioner, guesser ) =
+                        getCurrentPlayers gameModel.currentPlayersIndex playersOrder
+                in
+                ( { model
+                    | gameModel =
+                        { gameModel
+                            | time = time
+                            , currentTime = time
+                            , playersOrder = playersOrder
+                            , questioner = questioner
+                            , guesser = guesser
+                        }
+                    , players = players
+                    , preparingModel = { preparingModel | removing = Set.empty }
+                    , status = Playing
+                  }
+                , Cmd.none
+                )
+                    |> lockTaps
 
         NoOp ->
             ( model, Cmd.none )
@@ -239,7 +266,18 @@ update msg ({ preparingModel, gameModel } as model) =
             updatePreparing preparingMsg model
 
         GameMsg gameMsg ->
-            updateGame gameMsg model
+            if acceptsGameMsg gameMsg model then
+                updateGame gameMsg model
+
+            else
+                ( model, Cmd.none )
+
+        ReleaseTaps token ->
+            if token == model.tapGuard.token then
+                ( { model | tapGuard = { locked = False, token = token } }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
 
 
 updatePreparing : PreparingMsg -> Model -> ( Model, Cmd Msg )
@@ -300,6 +338,39 @@ updatePreparing msg ({ preparingModel } as model) =
                 )
 
 
+acceptsGameMsg : GameMsg -> Model -> Bool
+acceptsGameMsg msg model =
+    let
+        screen =
+            case msg of
+                Play ->
+                    Just GameShowingPlayers
+
+                Correct ->
+                    Just GamePlaying
+
+                Jump ->
+                    Just GamePlaying
+
+                Restart ->
+                    Just GameOver
+
+                Tick _ ->
+                    Nothing
+
+                NewWordIndex _ ->
+                    Nothing
+    in
+    case screen of
+        Just status ->
+            not model.tapGuard.locked
+                && model.status == Playing
+                && model.gameModel.status == status
+
+        Nothing ->
+            True
+
+
 updateGame : GameMsg -> Model -> ( Model, Cmd Msg )
 updateGame msg ({ gameModel } as model) =
     case msg of
@@ -310,6 +381,7 @@ updateGame msg ({ gameModel } as model) =
               }
             , Cmd.batch [ newWordIndex gameModel, keepAwake True ]
             )
+                |> lockTaps
 
         Tick _ ->
             let
@@ -325,13 +397,6 @@ updateGame msg ({ gameModel } as model) =
                     else
                         ( Time.millisToPosix newTime, gameModel.status )
 
-                newToShowJump =
-                    if gameModel.toShowJump > 0 then
-                        gameModel.toShowJump - 1
-
-                    else
-                        gameModel.toShowJump
-
                 justEnded =
                     newStatus == GameOver && gameModel.status /= GameOver
 
@@ -341,22 +406,23 @@ updateGame msg ({ gameModel } as model) =
 
                     else
                         gameModel.history
-            in
-            ( { model
-                | gameModel =
-                    { gameModel
-                        | currentTime = newCurrent
-                        , status = newStatus
-                        , toShowJump = newToShowJump
-                        , history = newHistory
-                    }
-              }
-            , if justEnded then
-                Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ]
 
-              else
-                Cmd.none
-            )
+                newModel =
+                    { model
+                        | gameModel =
+                            { gameModel
+                                | currentTime = newCurrent
+                                , status = newStatus
+                                , history = newHistory
+                            }
+                    }
+            in
+            if justEnded then
+                ( newModel, Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ] )
+                    |> lockTaps
+
+            else
+                ( newModel, Cmd.none )
 
         Restart ->
             let
@@ -398,6 +464,7 @@ updateGame msg ({ gameModel } as model) =
               }
             , Cmd.none
             )
+                |> lockTaps
 
         Correct ->
             ( { model
@@ -411,11 +478,19 @@ updateGame msg ({ gameModel } as model) =
             )
 
         Jump ->
-            ( { model
-                | gameModel = { gameModel | history = ( gameModel.word, Missed ) :: gameModel.history }
-              }
-            , newWordIndex gameModel
-            )
+            if canSkip gameModel then
+                ( { model
+                    | gameModel =
+                        { gameModel
+                            | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost)
+                            , history = ( gameModel.word, Missed ) :: gameModel.history
+                        }
+                  }
+                , newWordIndex gameModel
+                )
+
+            else
+                ( model, Cmd.none )
 
         NewWordIndex index ->
             let
@@ -451,7 +526,6 @@ updateGame msg ({ gameModel } as model) =
                                         else
                                             Set.insert index gameModel.drawnIndex
                                     , drawCount = gameModel.drawCount + 1
-                                    , toShowJump = 5
                                 }
                           }
                         , Cmd.none
@@ -715,7 +789,7 @@ viewPlaying { gameModel } =
         ]
     , footer =
         [ div [ class "actions" ]
-            [ viewSkipButton gameModel.toShowJump
+            [ viewSkipButton (canSkip gameModel)
             , button
                 [ type_ "button"
                 , class "btn btn--success btn--lg"
@@ -754,27 +828,19 @@ viewTimer gameModel =
         ]
 
 
-viewSkipButton : Int -> Html Msg
-viewSkipButton toShowJump =
-    if toShowJump == 0 then
-        button
-            [ type_ "button"
-            , class "btn btn--secondary btn--lg"
-            , onClick (GameMsg Jump)
-            ]
-            [ Icons.skip, text "Pular" ]
-
-    else
-        button
-            [ type_ "button"
-            , class "btn btn--secondary btn--lg"
-            , disabled True
-            , attribute "aria-label" ("Pular disponível em " ++ String.fromInt toShowJump ++ " segundos")
-            ]
-            [ span [ class "skip-ring", progressStyle (toFloat toShowJump / 5) ]
-                [ span [ class "skip-ring__num" ] [ text <| String.fromInt toShowJump ] ]
-            , text "Pular"
-            ]
+viewSkipButton : Bool -> Html Msg
+viewSkipButton enabled =
+    button
+        [ type_ "button"
+        , class "btn btn--secondary btn--lg"
+        , disabled (not enabled)
+        , attribute "aria-label" "Pular (perde 5 segundos)"
+        , onClick (GameMsg Jump)
+        ]
+        [ Icons.skip
+        , text "Pular"
+        , span [ class "skip-cost" ] [ text "−5s" ]
+        ]
 
 
 viewGameOver : Model -> Screen
@@ -916,6 +982,21 @@ viewAvatar playerName =
 ------------
 -- Helper --
 ------------
+
+
+lockTaps : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+lockTaps ( { tapGuard } as model, cmd ) =
+    let
+        token =
+            tapGuard.token + 1
+    in
+    ( { model | tapGuard = { locked = True, token = token } }
+    , Cmd.batch
+        [ cmd
+        , Process.sleep tapGuardMillis
+            |> Task.perform (\_ -> ReleaseTaps token)
+        ]
+    )
 
 
 activePlayers : Model -> Dict Int Player
