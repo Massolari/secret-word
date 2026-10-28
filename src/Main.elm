@@ -11,7 +11,7 @@ import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Html.Keyed as Keyed
 import Icons
 import Process
-import Random exposing (Generator)
+import Random
 import Set exposing (Set)
 import Task
 import Time
@@ -29,6 +29,7 @@ type alias Model =
     , players : Dict Int Player
     , preparingModel : PreparingModel
     , gameModel : GameModel
+    , tapGuard : TapGuard
     }
 
 
@@ -50,11 +51,17 @@ type alias GameModel =
     , questioner : ( Int, String )
     , guesser : ( Int, String )
     , status : GameStatus
-    , generator : Generator Int
-    , drawnIndex : List Int
-    , toShowJump : Int
+    , drawnIndex : Set Int
+    , currentIndex : Maybe Int
+    , drawCount : Int
     , history : List ( String, WordResult )
     , lastTick : Maybe Time.Posix
+    }
+
+
+type alias TapGuard =
+    { locked : Bool
+    , token : Int
     }
 
 
@@ -87,6 +94,7 @@ init =
       , players = Dict.empty
       , preparingModel = initPreparing
       , gameModel = initGame
+      , tapGuard = { locked = False, token = 0 }
       }
     , Cmd.none
     )
@@ -112,12 +120,22 @@ initGame =
     , questioner = ( 0, "Não encontrado" )
     , guesser = ( 0, "Não encontrado" )
     , status = GameShowingPlayers
-    , generator = randomWord <| Array.length Words.words
-    , drawnIndex = []
-    , toShowJump = 5
+    , drawnIndex = Set.empty
+    , currentIndex = Nothing
+    , drawCount = 0
     , history = []
     , lastTick = Nothing
     }
+
+
+skipCost : Int
+skipCost =
+    5000
+
+
+canSkip : GameModel -> Bool
+canSkip gameModel =
+    Time.posixToMillis gameModel.currentTime > skipCost
 
 
 roundPresets : List ( Int, String )
@@ -128,6 +146,11 @@ roundPresets =
     , ( 120, "2min" )
     , ( 180, "3min" )
     ]
+
+
+tapGuardMillis : Float
+tapGuardMillis =
+    500
 
 
 playerNameInputId : String
@@ -158,6 +181,7 @@ type Msg
     | NoOp
     | PreparingMsg PreparingMsg
     | GameMsg GameMsg
+    | ReleaseTaps Int
 
 
 type PreparingMsg
@@ -189,53 +213,57 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ preparingModel, gameModel } as model) =
     case msg of
         Start ->
-            let
-                players =
-                    activePlayers model
+            if model.status /= Preparing then
+                ( model, Cmd.none )
 
-                playersList =
-                    players
-                        |> Dict.toList
+            else
+                let
+                    players =
+                        activePlayers model
 
-                playersOrder =
-                    playersList
-                        |> Array.fromList
-                        |> Array.foldl
-                            (\( id, player ) arr ->
-                                let
-                                    othersPlayers =
-                                        List.filter (Tuple.first >> (/=) id) playersList
+                    playersList =
+                        players
+                            |> Dict.toList
 
-                                    playerOrder =
-                                        List.map (\( i, p ) -> ( ( id, player.name ), ( i, p.name ) )) othersPlayers
-                                            |> Array.fromList
-                                in
-                                Array.append arr playerOrder
-                            )
-                            Array.empty
+                    playersOrder =
+                        playersList
+                            |> Array.fromList
+                            |> Array.foldl
+                                (\( id, player ) arr ->
+                                    let
+                                        othersPlayers =
+                                            List.filter (Tuple.first >> (/=) id) playersList
 
-                time =
-                    Time.millisToPosix (preparingModel.roundSeconds * 1000)
+                                        playerOrder =
+                                            List.map (\( i, p ) -> ( ( id, player.name ), ( i, p.name ) )) othersPlayers
+                                                |> Array.fromList
+                                    in
+                                    Array.append arr playerOrder
+                                )
+                                Array.empty
 
-                ( questioner, guesser ) =
-                    getCurrentPlayers gameModel.currentPlayersIndex playersOrder
-            in
-            ( { model
-                | gameModel =
-                    { gameModel
-                        | time = time
-                        , currentTime = time
-                        , playersOrder = playersOrder
-                        , questioner = questioner
-                        , guesser = guesser
-                        , generator = randomWord <| Array.length Words.words
-                    }
-                , players = players
-                , preparingModel = { preparingModel | removing = Set.empty }
-                , status = Playing
-              }
-            , Cmd.none
-            )
+                    time =
+                        Time.millisToPosix (preparingModel.roundSeconds * 1000)
+
+                    ( questioner, guesser ) =
+                        getCurrentPlayers gameModel.currentPlayersIndex playersOrder
+                in
+                ( { model
+                    | gameModel =
+                        { gameModel
+                            | time = time
+                            , currentTime = time
+                            , playersOrder = playersOrder
+                            , questioner = questioner
+                            , guesser = guesser
+                        }
+                    , players = players
+                    , preparingModel = { preparingModel | removing = Set.empty }
+                    , status = Playing
+                  }
+                , Cmd.none
+                )
+                    |> lockTaps
 
         NoOp ->
             ( model, Cmd.none )
@@ -244,7 +272,18 @@ update msg ({ preparingModel, gameModel } as model) =
             updatePreparing preparingMsg model
 
         GameMsg gameMsg ->
-            updateGame gameMsg model
+            if acceptsGameMsg gameMsg model then
+                updateGame gameMsg model
+
+            else
+                ( model, Cmd.none )
+
+        ReleaseTaps token ->
+            if token == model.tapGuard.token then
+                ( { model | tapGuard = { locked = False, token = token } }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
 
 
 updatePreparing : PreparingMsg -> Model -> ( Model, Cmd Msg )
@@ -305,6 +344,45 @@ updatePreparing msg ({ preparingModel } as model) =
                 )
 
 
+acceptsGameMsg : GameMsg -> Model -> Bool
+acceptsGameMsg msg model =
+    let
+        screen =
+            case msg of
+                Play ->
+                    Just GameShowingPlayers
+
+                Correct ->
+                    Just GamePlaying
+
+                Jump ->
+                    Just GamePlaying
+
+                Restart ->
+                    Just GameOver
+
+                Resume ->
+                    Just GamePaused
+
+                Tick _ ->
+                    Nothing
+
+                NewWordIndex _ ->
+                    Nothing
+
+                VisibilityChanged _ ->
+                    Nothing
+    in
+    case screen of
+        Just status ->
+            not model.tapGuard.locked
+                && model.status == Playing
+                && model.gameModel.status == status
+
+        Nothing ->
+            True
+
+
 updateGame : GameMsg -> Model -> ( Model, Cmd Msg )
 updateGame msg ({ gameModel } as model) =
     case msg of
@@ -313,8 +391,9 @@ updateGame msg ({ gameModel } as model) =
                 | gameModel =
                     { gameModel | status = GamePlaying, lastTick = Nothing }
               }
-            , Cmd.batch [ newWordIndex gameModel.generator, tickNow, keepAwake True ]
+            , Cmd.batch [ newWordIndex gameModel, tickNow, keepAwake True ]
             )
+                |> lockTaps
 
         Tick now ->
             case ( gameModel.status, gameModel.lastTick ) of
@@ -336,13 +415,10 @@ updateGame msg ({ gameModel } as model) =
                     ( model, Cmd.none )
 
         Resume ->
-            if gameModel.status == GamePaused then
-                ( { model | gameModel = { gameModel | status = GamePlaying, lastTick = Nothing } }
-                , Cmd.batch [ tickNow, keepAwake True ]
-                )
-
-            else
-                ( model, Cmd.none )
+            ( { model | gameModel = { gameModel | status = GamePlaying, lastTick = Nothing } }
+            , Cmd.batch [ tickNow, keepAwake True ]
+            )
+                |> lockTaps
 
         VisibilityChanged visibility ->
             if gameModel.status == GamePlaying && visibility == Browser.Events.Hidden then
@@ -391,6 +467,7 @@ updateGame msg ({ gameModel } as model) =
               }
             , Cmd.none
             )
+                |> lockTaps
 
         Correct ->
             ( { model
@@ -400,42 +477,65 @@ updateGame msg ({ gameModel } as model) =
                         , history = ( gameModel.word, Guessed ) :: gameModel.history
                     }
               }
-            , Cmd.batch [ newWordIndex gameModel.generator, vibrate [ 30 ] ]
+            , Cmd.batch [ newWordIndex gameModel, vibrate [ 30 ] ]
             )
 
         Jump ->
-            ( { model
-                | gameModel = { gameModel | history = ( gameModel.word, Missed ) :: gameModel.history }
-              }
-            , newWordIndex gameModel.generator
-            )
-
-        NewWordIndex index ->
-            if List.member index gameModel.drawnIndex then
-                ( model, newWordIndex gameModel.generator )
+            if canSkip gameModel then
+                ( { model
+                    | gameModel =
+                        { gameModel
+                            | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost)
+                            , history = ( gameModel.word, Missed ) :: gameModel.history
+                        }
+                  }
+                , newWordIndex gameModel
+                )
 
             else
-                let
-                    newDrawnIndex =
-                        index :: gameModel.drawnIndex
+                ( model, Cmd.none )
 
-                    newGameModel =
-                        { gameModel | drawnIndex = newDrawnIndex }
-                in
+        NewWordIndex index ->
+            let
+                wordsCount =
+                    Array.length Words.words
+
+                cycleDone =
+                    Set.size gameModel.drawnIndex >= wordsCount
+
+                -- Resposta atrasada de um sorteio pedido antes do último aceito
+                stale =
+                    if cycleDone then
+                        wordsCount > 1 && gameModel.currentIndex == Just index
+
+                    else
+                        Set.member index gameModel.drawnIndex
+            in
+            if stale then
+                ( model, newWordIndex gameModel )
+
+            else
                 case Array.get index Words.words of
                     Just word ->
                         ( { model
                             | gameModel =
-                                { newGameModel
+                                { gameModel
                                     | word = word
-                                    , toShowJump = 5
+                                    , currentIndex = Just index
+                                    , drawnIndex =
+                                        if cycleDone then
+                                            Set.singleton index
+
+                                        else
+                                            Set.insert index gameModel.drawnIndex
+                                    , drawCount = gameModel.drawCount + 1
                                 }
                           }
                         , Cmd.none
                         )
 
                     Nothing ->
-                        ( { model | gameModel = newGameModel }, newWordIndex gameModel.generator )
+                        ( model, Cmd.none )
 
 
 {-| Intervalo entre ticks acima do qual a página foi congelada ou suspensa
@@ -463,38 +563,35 @@ advanceRound now elapsed ({ gameModel } as model) =
         justEnded =
             newTime <= 0
 
-        -- O bloqueio do Pular anda pelos segundos que o cronômetro cruzou
-        secondsCrossed =
-            secondsLeft gameModel.currentTime - secondsLeft newCurrent
-
         newHistory =
             if justEnded && Maybe.map Tuple.first (List.head gameModel.history) /= Just gameModel.word then
                 ( gameModel.word, Missed ) :: gameModel.history
 
             else
                 gameModel.history
-    in
-    ( { model
-        | gameModel =
-            { gameModel
-                | currentTime = newCurrent
-                , status =
-                    if justEnded then
-                        GameOver
 
-                    else
-                        gameModel.status
-                , toShowJump = max 0 (gameModel.toShowJump - secondsCrossed)
-                , history = newHistory
-                , lastTick = Just now
+        newModel =
+            { model
+                | gameModel =
+                    { gameModel
+                        | currentTime = newCurrent
+                        , status =
+                            if justEnded then
+                                GameOver
+
+                            else
+                                gameModel.status
+                        , history = newHistory
+                        , lastTick = Just now
+                    }
             }
-      }
-    , if justEnded then
-        Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ]
+    in
+    if justEnded then
+        ( newModel, Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ] )
+            |> lockTaps
 
-      else
-        Cmd.none
-    )
+    else
+        ( newModel, Cmd.none )
 
 
 pauseRound : Model -> ( Model, Cmd Msg )
@@ -502,6 +599,7 @@ pauseRound ({ gameModel } as model) =
     ( { model | gameModel = { gameModel | status = GamePaused, lastTick = Nothing } }
     , keepAwake False
     )
+        |> lockTaps
 
 
 
@@ -735,7 +833,7 @@ viewPlaying { gameModel } =
                 [ text <| Tuple.second gameModel.questioner ++ " dá dicas para " ++ Tuple.second gameModel.guesser ]
             , Keyed.node "div"
                 [ class "word-stage", attribute "aria-live" "polite" ]
-                [ ( String.fromInt (List.length gameModel.drawnIndex)
+                [ ( String.fromInt gameModel.drawCount
                   , p [ class "word" ] [ text gameModel.word ]
                   )
                 ]
@@ -761,7 +859,7 @@ viewPlaying { gameModel } =
         ]
     , footer =
         [ div [ class "actions" ]
-            [ viewSkipButton gameModel.toShowJump
+            [ viewSkipButton (canSkip gameModel)
             , button
                 [ type_ "button"
                 , class "btn btn--success btn--lg"
@@ -826,27 +924,19 @@ viewTimer gameModel =
         ]
 
 
-viewSkipButton : Int -> Html Msg
-viewSkipButton toShowJump =
-    if toShowJump == 0 then
-        button
-            [ type_ "button"
-            , class "btn btn--secondary btn--lg"
-            , onClick (GameMsg Jump)
-            ]
-            [ Icons.skip, text "Pular" ]
-
-    else
-        button
-            [ type_ "button"
-            , class "btn btn--secondary btn--lg"
-            , disabled True
-            , attribute "aria-label" ("Pular disponível em " ++ String.fromInt toShowJump ++ " segundos")
-            ]
-            [ span [ class "skip-ring", progressStyle (toFloat toShowJump / 5) ]
-                [ span [ class "skip-ring__num" ] [ text <| String.fromInt toShowJump ] ]
-            , text "Pular"
-            ]
+viewSkipButton : Bool -> Html Msg
+viewSkipButton enabled =
+    button
+        [ type_ "button"
+        , class "btn btn--secondary btn--lg"
+        , disabled (not enabled)
+        , attribute "aria-label" "Pular (perde 5 segundos)"
+        , onClick (GameMsg Jump)
+        ]
+        [ Icons.skip
+        , text "Pular"
+        , span [ class "skip-cost" ] [ text "−5s" ]
+        ]
 
 
 viewGameOver : Model -> Screen
@@ -990,6 +1080,21 @@ viewAvatar playerName =
 ------------
 
 
+lockTaps : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+lockTaps ( { tapGuard } as model, cmd ) =
+    let
+        token =
+            tapGuard.token + 1
+    in
+    ( { model | tapGuard = { locked = True, token = token } }
+    , Cmd.batch
+        [ cmd
+        , Process.sleep tapGuardMillis
+            |> Task.perform (\_ -> ReleaseTaps token)
+        ]
+    )
+
+
 activePlayers : Model -> Dict Int Player
 activePlayers model =
     Dict.filter (\id _ -> not (Set.member id model.preparingModel.removing)) model.players
@@ -1039,14 +1144,41 @@ getCurrentPlayers index players =
         |> Maybe.withDefault ( ( 0, "Error" ), ( 0, "Error" ) )
 
 
-randomWord : Int -> Generator Int
-randomWord arrayLength =
-    Random.int 0 arrayLength
+{-| Índices que podem ser sorteados: os que ainda não saíram na partida ou,
+com a lista esgotada, todos menos a palavra atual (novo ciclo).
+-}
+wordPool : Int -> Set Int -> Maybe Int -> List Int
+wordPool wordsCount drawn current =
+    let
+        allIndexes =
+            List.range 0 (wordsCount - 1)
+
+        remaining =
+            List.filter (\index -> not (Set.member index drawn)) allIndexes
+
+        newCycle =
+            List.filter (\index -> Just index /= current) allIndexes
+    in
+    if not (List.isEmpty remaining) then
+        remaining
+
+    else if not (List.isEmpty newCycle) then
+        newCycle
+
+    else
+        allIndexes
 
 
-newWordIndex : Generator Int -> Cmd Msg
-newWordIndex generator =
-    Random.generate (GameMsg << NewWordIndex) generator
+newWordIndex : GameModel -> Cmd Msg
+newWordIndex gameModel =
+    let
+        pool =
+            wordPool (Array.length Words.words) gameModel.drawnIndex gameModel.currentIndex
+                |> Array.fromList
+    in
+    Random.int 0 (Array.length pool - 1)
+        |> Random.map (\position -> Array.get position pool |> Maybe.withDefault -1)
+        |> Random.generate (GameMsg << NewWordIndex)
 
 
 

@@ -765,32 +765,10 @@ input {
     min-height: 64px;
 }
 
-.skip-ring {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    flex: none;
-    border-radius: var(--radius-full);
-    background: conic-gradient(var(--accent) calc(var(--progress) * 1turn), var(--border) 0);
-    font-size: 0.8125rem;
-    font-weight: 800;
+.skip-cost {
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
-    transition: --progress 1s linear;
-}
-
-.skip-ring::before {
-    content: "";
-    position: absolute;
-    inset: 3px;
-    border-radius: inherit;
-    background: var(--surface);
-}
-
-.skip-ring__num {
-    position: relative;
+    color: var(--text-muted);
 }
 
 .actions .btn--secondary:disabled {
@@ -927,8 +905,7 @@ input {
         animation: none;
     }
 
-    .timer__fill,
-    .skip-ring {
+    .timer__fill {
         transition: none;
     }
 
