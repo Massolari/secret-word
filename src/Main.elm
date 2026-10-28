@@ -11,7 +11,6 @@ import Material.Fab exposing (extendedFab, extendedFabConfig, fab, fabConfig)
 import Material.IconButton exposing (iconButton, iconButtonConfig)
 import Material.LayoutGrid exposing (layoutGrid, layoutGridCell, layoutGridInner, span12, span3)
 import Material.List exposing (list, listConfig, listItem, listItemConfig, listItemMeta, listItemPrimaryText, listItemSecondaryText, listItemText)
-import Material.Switch exposing (switch, switchConfig)
 import Material.TextField exposing (textField, textFieldConfig)
 import Material.Typography exposing (headline4, headline5)
 import Random exposing (Generator)
@@ -32,7 +31,6 @@ type alias Model =
     , preparingModel : PreparingModel
     , gameModel : GameModel
     , zone : Time.Zone
-    , allWords : Bool
     }
 
 
@@ -83,7 +81,6 @@ init =
       , preparingModel = initPreparing
       , gameModel = initGame
       , zone = Time.utc
-      , allWords = False
       }
     , Task.perform AdjustTimeZone Time.here
     )
@@ -108,7 +105,7 @@ initGame =
     , questioner = ( 0, "Não encontrado" )
     , guesser = ( 0, "Não encontrado" )
     , status = GameShowingPlayers
-    , generator = randomWord <| Array.length Words.all
+    , generator = randomWord <| Array.length Words.words
     , drawnIndex = []
     , toShowJump = 5
     }
@@ -132,7 +129,6 @@ type PreparingMsg
     | InputPlayer String
     | DeletePlayer Int
     | AddUser
-    | ChangeWord
 
 
 type GameMsg
@@ -207,7 +203,7 @@ update msg ({ preparingModel, gameModel } as model) =
                         , playersOrder = playersOrder
                         , questioner = questioner
                         , guesser = guesser
-                        , generator = randomWord <| Array.length <| Words.get model.allWords
+                        , generator = randomWord <| Array.length Words.words
                     }
                 , status = Playing
               }
@@ -261,9 +257,6 @@ updatePreparing msg ({ preparingModel } as model) =
               }
             , Cmd.none
             )
-
-        ChangeWord ->
-            ( { model | allWords = not model.allWords }, Cmd.none )
 
 
 updateGame : GameMsg -> Model -> ( Model, Cmd Msg )
@@ -371,7 +364,7 @@ updateGame msg ({ gameModel } as model) =
                     newGameModel =
                         { gameModel | drawnIndex = newDrawnIndex }
                 in
-                case Array.get index (Words.get model.allWords) of
+                case Array.get index Words.words of
                     Just word ->
                         ( { model
                             | gameModel =
@@ -409,11 +402,6 @@ viewPreparing ({ preparingModel } as model) =
         [ layoutGridInner []
             [ layoutGridCell [ span12 ] [ viewPrepareTime model ]
             , layoutGridCell [ span12 ] [ viewPreparePlayers model ]
-            , layoutGridCell [ span12 ]
-                [ text "Palavras verificadas "
-                , span [ class "word-switch" ] [ switch { switchConfig | checked = model.allWords, onChange = Just (PreparingMsg ChangeWord) } ]
-                , text " Todas as palavras"
-                ]
             , layoutGridCell [ span12 ]
                 [ raisedButton
                     { buttonConfig
