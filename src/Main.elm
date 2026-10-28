@@ -1026,20 +1026,25 @@ viewScoreboard model =
             Dict.toList model.players
                 |> List.sortBy (\( _, player ) -> negate player.score)
 
+        scores =
+            List.map (Tuple.second >> .score) players
+
         topScore =
-            players
-                |> List.map (Tuple.second >> .score)
+            scores
                 |> List.maximum
                 |> Maybe.withDefault 0
     in
     section [ class "section" ]
         [ h2 [ class "section__title" ] [ text "Placar" ]
         , ol [ class "card scoreboard" ] <|
-            List.indexedMap
-                (\index ( id, player ) ->
+            List.map
+                (\( id, player ) ->
                     let
                         leader =
                             topScore > 0 && player.score == topScore
+
+                        position =
+                            1 + List.length (List.filter (\score -> score > player.score) scores)
                     in
                     li
                         [ classList [ ( "scoreboard__row", True ), ( "scoreboard__row--leader", leader ) ]
@@ -1050,7 +1055,7 @@ viewScoreboard model =
                                 Icons.trophy
 
                               else
-                                text <| String.fromInt (index + 1)
+                                text <| String.fromInt position
                             ]
                         , viewAvatar player.name
                         , span [ class "scoreboard__name" ] [ text player.name ]
