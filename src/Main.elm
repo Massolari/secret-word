@@ -3,6 +3,7 @@ port module Main exposing (..)
 import Array exposing (Array)
 import Browser
 import Browser.Dom
+import Browser.Events
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, fieldset, form, h1, h2, input, label, legend, li, ol, p, section, span, text, ul)
 import Html.Attributes exposing (attribute, autocomplete, checked, class, classList, disabled, id, maxlength, name, novalidate, placeholder, type_, value)
@@ -53,6 +54,7 @@ type alias GameModel =
     , drawnIndex : List Int
     , toShowJump : Int
     , history : List ( String, WordResult )
+    , lastTick : Maybe Time.Posix
     }
 
 
@@ -70,6 +72,7 @@ type Status
 type GameStatus
     = GameShowingPlayers
     | GamePlaying
+    | GamePaused
     | GameOver
 
 
@@ -113,6 +116,7 @@ initGame =
     , drawnIndex = []
     , toShowJump = 5
     , history = []
+    , lastTick = Nothing
     }
 
 
@@ -171,6 +175,8 @@ type GameMsg
     | Correct
     | Jump
     | NewWordIndex Int
+    | Resume
+    | VisibilityChanged Browser.Events.Visibility
 
 
 
@@ -305,57 +311,45 @@ updateGame msg ({ gameModel } as model) =
         Play ->
             ( { model
                 | gameModel =
-                    { gameModel | status = GamePlaying }
+                    { gameModel | status = GamePlaying, lastTick = Nothing }
               }
-            , Cmd.batch [ newWordIndex gameModel.generator, keepAwake True ]
+            , Cmd.batch [ newWordIndex gameModel.generator, tickNow, keepAwake True ]
             )
 
-        Tick _ ->
-            let
-                newTime =
-                    gameModel.currentTime
-                        |> Time.posixToMillis
-                        |> (\t -> t - 1000)
+        Tick now ->
+            case ( gameModel.status, gameModel.lastTick ) of
+                ( GamePlaying, Nothing ) ->
+                    ( { model | gameModel = { gameModel | lastTick = Just now } }, Cmd.none )
 
-                ( newCurrent, newStatus ) =
-                    if newTime <= 0 then
-                        ( Time.millisToPosix 0, GameOver )
-
-                    else
-                        ( Time.millisToPosix newTime, gameModel.status )
-
-                newToShowJump =
-                    if gameModel.toShowJump > 0 then
-                        gameModel.toShowJump - 1
+                ( GamePlaying, Just previous ) ->
+                    let
+                        elapsed =
+                            max 0 (Time.posixToMillis now - Time.posixToMillis previous)
+                    in
+                    if elapsed > interruptionMillis then
+                        pauseRound model
 
                     else
-                        gameModel.toShowJump
+                        advanceRound now elapsed model
 
-                justEnded =
-                    newStatus == GameOver && gameModel.status /= GameOver
+                _ ->
+                    ( model, Cmd.none )
 
-                newHistory =
-                    if justEnded && Maybe.map Tuple.first (List.head gameModel.history) /= Just gameModel.word then
-                        ( gameModel.word, Missed ) :: gameModel.history
+        Resume ->
+            if gameModel.status == GamePaused then
+                ( { model | gameModel = { gameModel | status = GamePlaying, lastTick = Nothing } }
+                , Cmd.batch [ tickNow, keepAwake True ]
+                )
 
-                    else
-                        gameModel.history
-            in
-            ( { model
-                | gameModel =
-                    { gameModel
-                        | currentTime = newCurrent
-                        , status = newStatus
-                        , toShowJump = newToShowJump
-                        , history = newHistory
-                    }
-              }
-            , if justEnded then
-                Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ]
+            else
+                ( model, Cmd.none )
 
-              else
-                Cmd.none
-            )
+        VisibilityChanged visibility ->
+            if gameModel.status == GamePlaying && visibility == Browser.Events.Hidden then
+                pauseRound model
+
+            else
+                ( model, Cmd.none )
 
         Restart ->
             let
@@ -442,6 +436,72 @@ updateGame msg ({ gameModel } as model) =
 
                     Nothing ->
                         ( { model | gameModel = newGameModel }, newWordIndex gameModel.generator )
+
+
+{-| Intervalo entre ticks acima do qual a página foi congelada ou suspensa
+sem avisar, e a rodada deve pausar em vez de descontar esse tempo.
+-}
+interruptionMillis : Int
+interruptionMillis =
+    2000
+
+
+tickNow : Cmd Msg
+tickNow =
+    Task.perform (GameMsg << Tick) Time.now
+
+
+advanceRound : Time.Posix -> Int -> Model -> ( Model, Cmd Msg )
+advanceRound now elapsed ({ gameModel } as model) =
+    let
+        newTime =
+            max 0 (Time.posixToMillis gameModel.currentTime - elapsed)
+
+        newCurrent =
+            Time.millisToPosix newTime
+
+        justEnded =
+            newTime <= 0
+
+        -- O bloqueio do Pular anda pelos segundos que o cronômetro cruzou
+        secondsCrossed =
+            secondsLeft gameModel.currentTime - secondsLeft newCurrent
+
+        newHistory =
+            if justEnded && Maybe.map Tuple.first (List.head gameModel.history) /= Just gameModel.word then
+                ( gameModel.word, Missed ) :: gameModel.history
+
+            else
+                gameModel.history
+    in
+    ( { model
+        | gameModel =
+            { gameModel
+                | currentTime = newCurrent
+                , status =
+                    if justEnded then
+                        GameOver
+
+                    else
+                        gameModel.status
+                , toShowJump = max 0 (gameModel.toShowJump - secondsCrossed)
+                , history = newHistory
+                , lastTick = Just now
+            }
+      }
+    , if justEnded then
+        Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ]
+
+      else
+        Cmd.none
+    )
+
+
+pauseRound : Model -> ( Model, Cmd Msg )
+pauseRound ({ gameModel } as model) =
+    ( { model | gameModel = { gameModel | status = GamePaused, lastTick = Nothing } }
+    , keepAwake False
+    )
 
 
 
@@ -622,6 +682,9 @@ viewGame ({ gameModel } as model) =
         GamePlaying ->
             viewPlaying model
 
+        GamePaused ->
+            viewPaused model
+
         GameOver ->
             viewGameOver model
 
@@ -706,6 +769,32 @@ viewPlaying { gameModel } =
                 ]
                 [ Icons.check, text "Acertou" ]
             ]
+        ]
+    }
+
+
+viewPaused : Model -> Screen
+viewPaused { gameModel } =
+    { key = "paused"
+    , header = viewTimer gameModel
+    , main =
+        [ div [ class "round" ]
+            [ p [ class "round__pair" ]
+                [ text <| Tuple.second gameModel.questioner ++ " dá dicas para " ++ Tuple.second gameModel.guesser ]
+            , div [ class "card paused" ]
+                [ span [ class "paused__icon" ] [ Icons.clock ]
+                , h2 [ class "paused__title" ] [ text "Rodada pausada" ]
+                , p [ class "paused__text" ] [ text "O tempo para quando o jogo sai da tela." ]
+                ]
+            ]
+        ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick (GameMsg Resume)
+            ]
+            [ text "Continuar rodada", Icons.play ]
         ]
     }
 
@@ -931,9 +1020,17 @@ getTimeString time =
                 >> String.padLeft 2 '0'
 
         totalSeconds =
-            Time.posixToMillis time // 1000
+            secondsLeft time
     in
     pad (totalSeconds // 60) ++ ":" ++ pad (modBy 60 totalSeconds)
+
+
+{-| Segundos inteiros que faltam, arredondados para cima: o cronômetro só
+mostra 00:00 quando o tempo acabou.
+-}
+secondsLeft : Time.Posix -> Int
+secondsLeft time =
+    (Time.posixToMillis time + 999) // 1000
 
 
 getCurrentPlayers : Int -> Array ( ( Int, String ), ( Int, String ) ) -> ( ( Int, String ), ( Int, String ) )
@@ -962,7 +1059,10 @@ subscriptions : Model -> Sub Msg
 subscriptions ({ gameModel } as model) =
     case gameModel.status of
         GamePlaying ->
-            Time.every 1000 (GameMsg << Tick)
+            Sub.batch
+                [ Time.every 200 (GameMsg << Tick)
+                , Browser.Events.onVisibilityChange (GameMsg << VisibilityChanged)
+                ]
 
         _ ->
             Sub.none
