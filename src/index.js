@@ -12,18 +12,24 @@ app.ports?.vibrate?.subscribe((pattern) => {
 
 let wantsWakeLock = false
 let wakeLock = null
+let pendingRequest = null
 
 async function requestWakeLock() {
-    if (!navigator.wakeLock || wakeLock) return
+    if (!navigator.wakeLock || pendingRequest || (wakeLock && !wakeLock.released)) return
     try {
-        wakeLock = await navigator.wakeLock.request("screen")
-        wakeLock.addEventListener("release", () => {
-            wakeLock = null
-        })
-        if (!wantsWakeLock) releaseWakeLock()
+        pendingRequest = navigator.wakeLock.request("screen")
+        const lock = await pendingRequest
+        if (!lock.released) {
+            lock.addEventListener("release", () => {
+                if (wakeLock === lock) wakeLock = null
+            })
+            wakeLock = lock
+        }
     } catch (_) {
-        wakeLock = null
+    } finally {
+        pendingRequest = null
     }
+    if (!wantsWakeLock) releaseWakeLock()
 }
 
 function releaseWakeLock() {
