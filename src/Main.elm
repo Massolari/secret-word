@@ -52,6 +52,7 @@ type alias GameModel =
     , generator : Generator Int
     , drawnIndex : List Int
     , toShowJump : Int
+    , history : List ( String, WordResult )
     }
 
 
@@ -70,6 +71,11 @@ type GameStatus
     = GameShowingPlayers
     | GamePlaying
     | GameOver
+
+
+type WordResult
+    = Guessed
+    | Missed
 
 
 init : ( Model, Cmd Msg )
@@ -106,6 +112,7 @@ initGame =
     , generator = randomWord <| Array.length Words.words
     , drawnIndex = []
     , toShowJump = 5
+    , history = []
     }
 
 
@@ -323,6 +330,16 @@ updateGame msg ({ gameModel } as model) =
 
                     else
                         gameModel.toShowJump
+
+                justEnded =
+                    newStatus == GameOver && gameModel.status /= GameOver
+
+                newHistory =
+                    if justEnded && Maybe.map Tuple.first (List.head gameModel.history) /= Just gameModel.word then
+                        ( gameModel.word, Missed ) :: gameModel.history
+
+                    else
+                        gameModel.history
             in
             ( { model
                 | gameModel =
@@ -330,9 +347,10 @@ updateGame msg ({ gameModel } as model) =
                         | currentTime = newCurrent
                         , status = newStatus
                         , toShowJump = newToShowJump
+                        , history = newHistory
                     }
               }
-            , if newStatus == GameOver && gameModel.status /= GameOver then
+            , if justEnded then
                 Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ]
 
               else
@@ -373,6 +391,7 @@ updateGame msg ({ gameModel } as model) =
                         , score = 0
                         , currentTime = gameModel.time
                         , status = GameShowingPlayers
+                        , history = []
                     }
                 , players = playersUpdated
               }
@@ -381,13 +400,21 @@ updateGame msg ({ gameModel } as model) =
 
         Correct ->
             ( { model
-                | gameModel = { gameModel | score = gameModel.score + 1 }
+                | gameModel =
+                    { gameModel
+                        | score = gameModel.score + 1
+                        , history = ( gameModel.word, Guessed ) :: gameModel.history
+                    }
               }
             , Cmd.batch [ newWordIndex gameModel.generator, vibrate [ 30 ] ]
             )
 
         Jump ->
-            ( model, newWordIndex gameModel.generator )
+            ( { model
+                | gameModel = { gameModel | history = ( gameModel.word, Missed ) :: gameModel.history }
+              }
+            , newWordIndex gameModel.generator
+            )
 
         NewWordIndex index ->
             if List.member index gameModel.drawnIndex then
@@ -753,6 +780,7 @@ viewGameOver ({ gameModel } as model) =
             [ viewResultRow guesserId guesser "adivinhou" gameModel.score
             , viewResultRow questionerId questioner "deu as dicas" questionerScore
             ]
+        , viewHistory gameModel.history
         , viewScoreboard model
         ]
     , footer =
@@ -775,6 +803,40 @@ viewResultRow id playerName role points =
             , p [ class "result__role" ] [ text role ]
             ]
         , span [ class "result__points" ] [ text <| "+" ++ String.fromInt points ]
+        ]
+
+
+viewHistory : List ( String, WordResult ) -> Html Msg
+viewHistory history =
+    let
+        guessed =
+            List.length (List.filter (Tuple.second >> (==) Guessed) history)
+    in
+    section [ class "section" ]
+        [ h2 [ class "section__title" ]
+            [ text "Palavras"
+            , span [ class "section__count" ]
+                [ text <| String.fromInt guessed ++ "/" ++ String.fromInt (List.length history) ]
+            ]
+        , ol [ class "card history" ] <|
+            List.map
+                (\( word, result ) ->
+                    let
+                        ( modifier, icon, resultText ) =
+                            case result of
+                                Guessed ->
+                                    ( "history__row--guessed", Icons.check, "acertou" )
+
+                                Missed ->
+                                    ( "history__row--missed", Icons.close, "errou" )
+                    in
+                    li [ class ("history__row " ++ modifier) ]
+                        [ span [ class "history__icon" ] [ icon ]
+                        , span [ class "history__word" ] [ text word ]
+                        , span [ class "visually-hidden" ] [ text <| ", " ++ resultText ]
+                        ]
+                )
+                (List.reverse history)
         ]
 
 

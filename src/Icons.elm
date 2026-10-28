@@ -1,4 +1,4 @@
-module Icons exposing (arrowDown, check, clock, play, plus, skip, trash, trophy, users)
+module Icons exposing (arrowDown, check, clock, close, play, plus, skip, trash, trophy, users)
 
 import Html exposing (Html)
 import Html.Attributes exposing (attribute)
@@ -40,6 +40,11 @@ trash =
 check : Html msg
 check =
     icon [ path [ d "M20 6 9 17l-5-5" ] [] ]
+
+
+close : Html msg
+close =
+    icon [ path [ d "M18 6 6 18M6 6l12 12" ] [] ]
 
 
 skip : Html msg

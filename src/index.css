@@ -580,6 +580,46 @@ input {
     color: var(--accent);
 }
 
+/* ---------- Word history ---------- */
+
+.history {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) var(--space-4);
+}
+
+.history__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 44px;
+}
+
+.history__row + .history__row {
+    border-top: 1px solid var(--border);
+}
+
+.history__icon {
+    display: inline-flex;
+    flex: none;
+}
+
+.history__word {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+}
+
+.history__row--guessed .history__icon {
+    color: var(--success);
+}
+
+.history__row--missed .history__icon,
+.history__row--missed .history__word {
+    color: var(--text-muted);
+}
+
 /* ---------- Timer ---------- */
 
 .timer {
