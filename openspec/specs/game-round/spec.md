@@ -34,7 +34,7 @@ Durante a rodada, a palavra sorteada SHALL ser o elemento de maior destaque da t
 - **THEN** a lista de pontuação dos jogadores não aparece
 
 ### Requirement: Acertar
-Durante a rodada, tocar em Acertou SHALL somar 1 ao contador de acertos da rodada, exibido na tela, e sortear uma nova palavra ainda não sorteada na partida. Depois de um toque em Acertou ou Pular, o botão Acertou SHALL ignorar toques e teclas até 500 ms depois de a nova palavra aparecer. Um toque ignorado SHALL NOT ter efeito: não soma acerto, não entra no histórico, não troca a palavra e não vibra. A aparência do botão SHALL NOT mudar por causa desse bloqueio.
+Durante a rodada, tocar em Acertou SHALL somar 1 ao contador de acertos da rodada, exibido na tela, e sortear uma nova palavra conforme o requisito "Sorteio de palavras". Depois de um toque em Acertou ou Pular, o botão Acertou SHALL ignorar toques e teclas até 500 ms depois de a nova palavra aparecer. Um toque ignorado SHALL NOT ter efeito: não soma acerto, não entra no histórico, não troca a palavra e não vibra. A aparência do botão SHALL NOT mudar por causa desse bloqueio.
 
 #### Scenario: Acerto
 - **WHEN** o contador está em 2 e o jogador toca em Acertou
@@ -87,8 +87,35 @@ Durante a rodada, o botão Pular SHALL estar disponível desde que a palavra apa
 - **WHEN** restam 00:14 e o jogador toca em Pular
 - **THEN** o cronômetro mostra 00:09 e o cronômetro e a barra mudam para a cor de alerta
 
+### Requirement: Sorteio de palavras
+Sempre que a rodada precisa de uma nova palavra (início da rodada, Acertou ou Pular), o jogo SHALL sortear, com chances iguais, uma palavra da lista que ainda não saiu na partida. Toda palavra da lista SHALL poder ser sorteada. O sorteio SHALL terminar sem travar o app, por mais palavras que já tenham saído.
+
+#### Scenario: Sem repetição na partida
+- **WHEN** uma palavra já saiu em qualquer rodada da partida e ainda há palavras da lista que não saíram
+- **THEN** essa palavra não é sorteada de novo
+
+#### Scenario: Todas as palavras podem sair
+- **WHEN** a partida sorteia palavras até passar pela lista inteira
+- **THEN** cada palavra da lista, incluindo a primeira e a última, sai exatamente uma vez antes de qualquer repetição
+
+#### Scenario: Poucas palavras restantes
+- **WHEN** resta só uma palavra da lista que ainda não saiu e o jogador toca em Acertou
+- **THEN** essa palavra aparece na hora, sem o app congelar
+
+### Requirement: Lista esgotada
+Quando todas as palavras da lista já saíram na partida, o jogo SHALL começar um novo ciclo de sorteio com a lista inteira, sem aviso e sem interromper a rodada. A palavra que está na tela SHALL ficar de fora do primeiro sorteio do novo ciclo, a menos que ela seja a única palavra da lista.
+
+#### Scenario: Última palavra acertada
+- **WHEN** a palavra na tela é a última da lista que ainda não tinha saído e o jogador toca em Acertou
+- **THEN** o contador soma 1 e aparece uma nova palavra, diferente da que estava na tela
+- **AND** a rodada e o cronômetro continuam normalmente
+
+#### Scenario: Novo ciclo sem repetição
+- **WHEN** um novo ciclo começou
+- **THEN** nenhuma palavra se repete até que a lista inteira tenha saído de novo
+
 ### Requirement: Cronômetro com progresso
-Durante a rodada, o tempo restante SHALL aparecer no formato MM:SS e como uma barra de progresso que diminui a cada segundo. Nos últimos 10 segundos, o cronômetro SHALL ganhar destaque visual de alerta.
+Durante a rodada, o tempo restante SHALL aparecer no formato MM:SS e como uma barra de progresso que diminui a cada segundo. O tempo restante SHALL ser calculado pelo tempo real decorrido com a rodada em andamento, de modo que atrasos do navegador não alonguem a rodada. Nos últimos 10 segundos, o cronômetro SHALL ganhar destaque visual de alerta.
 
 #### Scenario: Contagem normal
 - **WHEN** a rodada de 1min começa
@@ -97,6 +124,10 @@ Durante a rodada, o tempo restante SHALL aparecer no formato MM:SS e como uma ba
 #### Scenario: Últimos segundos
 - **WHEN** faltam 10 segundos ou menos
 - **THEN** o cronômetro e a barra mudam para a cor de alerta
+
+#### Scenario: Navegador lento
+- **WHEN** uma rodada de 30s fica o tempo todo em primeiro plano, mas o navegador entrega as atualizações com atraso
+- **THEN** a rodada termina 30 segundos depois de começar, com margem de até 1 segundo
 
 ### Requirement: Fim da rodada e pontuação
 Quando o tempo chega a zero, a rodada SHALL terminar e mostrar os pontos da rodada: quem adivinhou ganha o número de acertos e quem deu as dicas ganha metade, arredondada para baixo. Tocar em Continuar SHALL somar esses pontos ao placar e ir para o anúncio da próxima dupla.
@@ -149,7 +180,7 @@ Em aparelhos que suportam vibração, o jogo SHALL vibrar brevemente ao registra
 - **THEN** acertos e fim do tempo funcionam normalmente, sem erro no console
 
 ### Requirement: Tela acesa durante a rodada
-Enquanto uma rodada está em andamento, o jogo SHALL pedir ao navegador que mantenha a tela acesa, quando houver suporte, e SHALL liberar esse pedido quando a rodada termina. Se o pedido falhar ou não houver suporte, o jogo SHALL continuar normalmente.
+Enquanto uma rodada está em andamento, o jogo SHALL pedir ao navegador que mantenha a tela acesa, quando houver suporte, e SHALL liberar esse pedido quando a rodada termina ou é pausada. Ao retomar a rodada, o jogo SHALL pedir de novo. Se o pedido falhar ou não houver suporte, o jogo SHALL continuar normalmente.
 
 #### Scenario: Rodada longa
 - **WHEN** uma rodada de 3min está em andamento num navegador com suporte
@@ -159,8 +190,44 @@ Enquanto uma rodada está em andamento, o jogo SHALL pedir ao navegador que mant
 - **WHEN** a rodada termina
 - **THEN** o jogo libera o pedido e a tela volta a seguir o tempo de bloqueio do aparelho
 
+#### Scenario: Rodada pausada
+- **WHEN** a rodada está pausada
+- **THEN** a tela segue o tempo de bloqueio do aparelho
+- **AND** ao retomar a rodada, a tela volta a ficar acesa
+
+### Requirement: Pausa ao sair da tela
+Quando o jogo deixa de ficar visível durante a rodada (aba oculta, outro app em primeiro plano ou tela bloqueada), a rodada SHALL pausar. O tempo em que o jogo ficou fora da tela SHALL NOT ser descontado. Se a página ficar parada sem aviso por mais de alguns segundos, o jogo SHALL tratar isso como uma saída da tela. Fora da rodada (anúncio da dupla e fim da rodada), sair da tela SHALL NOT mudar nada.
+
+#### Scenario: Tela bloqueada
+- **WHEN** faltam 40 segundos, o aparelho é bloqueado por 2 minutos e depois desbloqueado
+- **THEN** o jogo mostra a rodada pausada com 00:40 restantes
+
+#### Scenario: Troca de aba
+- **WHEN** faltam 15 segundos e o jogador abre outra aba por 30 segundos
+- **THEN** ao voltar, a rodada está pausada com 00:15 restantes e não terminou
+
+#### Scenario: Página congelada sem aviso
+- **WHEN** faltam 20 segundos e o navegador congela a página por 1 minuto sem avisar que ela saiu da tela
+- **THEN** ao voltar a rodar, o jogo mostra a rodada pausada com cerca de 00:20 restantes
+
+#### Scenario: Fora da rodada
+- **WHEN** o jogo está no anúncio da dupla ou no fim da rodada e o jogador troca de aba e volta
+- **THEN** a mesma tela continua aberta, sem pausa
+
+### Requirement: Retomar rodada pausada
+A tela de rodada pausada SHALL indicar que a rodada está pausada, mostrar a dupla e o tempo restante parado, esconder a palavra e não oferecer Acertou nem Pular. Tocar em Continuar rodada SHALL retomar a contagem a partir do tempo que restava, com a mesma palavra e o mesmo contador de acertos. A rodada SHALL NOT retomar sozinha quando o jogo volta a ficar visível.
+
+#### Scenario: Volta para o jogo
+- **WHEN** a rodada pausou e o jogador volta para o jogo
+- **THEN** a tela mostra "Rodada pausada", a dupla e o tempo restante parado
+- **AND** a palavra, Acertou e Pular não aparecem
+
+#### Scenario: Retomar
+- **WHEN** a rodada pausou com 00:25 restantes, 3 acertos e a palavra Cacto na tela, e o jogador toca em Continuar rodada
+- **THEN** a palavra Cacto volta a aparecer, o contador mostra 3 e o cronômetro volta a contar a partir de 00:25
+
 ### Requirement: Proteção contra toques na troca de tela
-Depois de cada troca de tela da partida (preparação → anúncio, anúncio → rodada, rodada → fim, fim → anúncio), os botões do rodapé da nova tela SHALL ignorar toques e teclas nos primeiros 500 ms e responder normalmente depois. A aparência dos botões SHALL NOT mudar por causa desse bloqueio. Uma ação SHALL valer só na tela a que pertence. Se a tela já trocou, a ação SHALL ser ignorada.
+Depois de cada troca de tela da partida (preparação → anúncio, anúncio → rodada, rodada → pausa, pausa → rodada, rodada → fim, fim → anúncio), os botões do rodapé da nova tela SHALL ignorar toques e teclas nos primeiros 500 ms e responder normalmente depois. A aparência dos botões SHALL NOT mudar por causa desse bloqueio. Uma ação SHALL valer só na tela a que pertence. Se a tela já trocou, a ação SHALL ser ignorada.
 
 #### Scenario: Acertou no fim do tempo
 - **WHEN** o tempo acaba enquanto o jogador toca repetidamente em Acertou, e um toque cai em Continuar até 500 ms depois da troca
@@ -179,6 +246,10 @@ Depois de cada troca de tela da partida (preparação → anúncio, anúncio →
 #### Scenario: Toque duplo em Começar
 - **WHEN** com jogadores suficientes, o jogador toca duas vezes seguidas em Começar na preparação
 - **THEN** a tela de anúncio da primeira dupla aparece e continua visível
+
+#### Scenario: Toque duplo em Continuar rodada
+- **WHEN** a rodada está pausada e o jogador toca duas vezes seguidas em Continuar rodada
+- **THEN** a rodada volta com a mesma palavra, o mesmo contador de acertos e o mesmo tempo restante
 
 #### Scenario: Botão liberado depois do bloqueio
 - **WHEN** passaram mais de 500 ms desde a troca de tela e o jogador toca no botão do rodapé

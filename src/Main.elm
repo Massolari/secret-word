@@ -3,6 +3,7 @@ port module Main exposing (..)
 import Array exposing (Array)
 import Browser
 import Browser.Dom
+import Browser.Events
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, fieldset, form, h1, h2, input, label, legend, li, ol, p, section, span, text, ul)
 import Html.Attributes exposing (attribute, autocomplete, checked, class, classList, disabled, id, maxlength, name, novalidate, placeholder, type_, value)
@@ -10,7 +11,7 @@ import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Html.Keyed as Keyed
 import Icons
 import Process
-import Random exposing (Generator)
+import Random
 import Set exposing (Set)
 import Task
 import Time
@@ -51,9 +52,11 @@ type alias GameModel =
     , questioner : ( Int, String )
     , guesser : ( Int, String )
     , status : GameStatus
-    , generator : Generator Int
-    , drawnIndex : List Int
+    , drawnIndex : Set Int
+    , currentIndex : Maybe Int
+    , drawCount : Int
     , history : List ( String, WordResult )
+    , lastTick : Maybe Time.Posix
     }
 
 
@@ -77,6 +80,7 @@ type Status
 type GameStatus
     = GameShowingPlayers
     | GamePlaying
+    | GamePaused
     | GameOver
 
 
@@ -118,9 +122,11 @@ initGame =
     , questioner = ( 0, "Não encontrado" )
     , guesser = ( 0, "Não encontrado" )
     , status = GameShowingPlayers
-    , generator = randomWord <| Array.length Words.words
-    , drawnIndex = []
+    , drawnIndex = Set.empty
+    , currentIndex = Nothing
+    , drawCount = 0
     , history = []
+    , lastTick = Nothing
     }
 
 
@@ -196,6 +202,8 @@ type GameMsg
     | Correct
     | Jump
     | NewWordIndex Int
+    | Resume
+    | VisibilityChanged Browser.Events.Visibility
 
 
 
@@ -251,7 +259,6 @@ update msg ({ preparingModel, gameModel } as model) =
                             , playersOrder = playersOrder
                             , questioner = questioner
                             , guesser = guesser
-                            , generator = randomWord <| Array.length Words.words
                         }
                     , players = players
                     , preparingModel = { preparingModel | removing = Set.empty }
@@ -364,10 +371,16 @@ acceptsGameMsg msg model =
                 Restart ->
                     Just GameOver
 
+                Resume ->
+                    Just GamePaused
+
                 Tick _ ->
                     Nothing
 
                 NewWordIndex _ ->
+                    Nothing
+
+                VisibilityChanged _ ->
                     Nothing
     in
     case screen of
@@ -387,52 +400,43 @@ updateGame msg ({ gameModel } as model) =
         Play ->
             ( { model
                 | gameModel =
-                    { gameModel | status = GamePlaying }
+                    { gameModel | status = GamePlaying, lastTick = Nothing }
               }
-            , Cmd.batch [ newWordIndex gameModel.generator, keepAwake True ]
+            , Cmd.batch [ newWordIndex gameModel, tickNow, keepAwake True ]
             )
                 |> lockTaps
 
-        Tick _ ->
-            let
-                newTime =
-                    gameModel.currentTime
-                        |> Time.posixToMillis
-                        |> (\t -> t - 1000)
+        Tick now ->
+            case ( gameModel.status, gameModel.lastTick ) of
+                ( GamePlaying, Nothing ) ->
+                    ( { model | gameModel = { gameModel | lastTick = Just now } }, Cmd.none )
 
-                ( newCurrent, newStatus ) =
-                    if newTime <= 0 then
-                        ( Time.millisToPosix 0, GameOver )
-
-                    else
-                        ( Time.millisToPosix newTime, gameModel.status )
-
-                justEnded =
-                    newStatus == GameOver && gameModel.status /= GameOver
-
-                newHistory =
-                    if justEnded && Maybe.map Tuple.first (List.head gameModel.history) /= Just gameModel.word then
-                        ( gameModel.word, Missed ) :: gameModel.history
+                ( GamePlaying, Just previous ) ->
+                    let
+                        elapsed =
+                            max 0 (Time.posixToMillis now - Time.posixToMillis previous)
+                    in
+                    if elapsed > interruptionMillis then
+                        pauseRound model
 
                     else
-                        gameModel.history
+                        advanceRound now elapsed model
 
-                newModel =
-                    { model
-                        | gameModel =
-                            { gameModel
-                                | currentTime = newCurrent
-                                , status = newStatus
-                                , history = newHistory
-                            }
-                    }
-            in
-            if justEnded then
-                ( newModel, Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ] )
-                    |> lockTaps
+                _ ->
+                    ( model, Cmd.none )
+
+        Resume ->
+            ( { model | gameModel = { gameModel | status = GamePlaying, lastTick = Nothing } }
+            , Cmd.batch [ tickNow, keepAwake True ]
+            )
+                |> lockTaps
+
+        VisibilityChanged visibility ->
+            if gameModel.status == GamePlaying && visibility == Browser.Events.Hidden then
+                pauseRound model
 
             else
-                ( newModel, Cmd.none )
+                ( model, Cmd.none )
 
         Restart ->
             let
@@ -485,7 +489,7 @@ updateGame msg ({ gameModel } as model) =
                             , history = ( gameModel.word, Guessed ) :: gameModel.history
                         }
                 }
-            , Cmd.batch [ newWordIndex gameModel.generator, vibrate [ 30 ] ]
+            , Cmd.batch [ newWordIndex gameModel, vibrate [ 30 ] ]
             )
 
         Jump ->
@@ -498,36 +502,118 @@ updateGame msg ({ gameModel } as model) =
                                 , history = ( gameModel.word, Missed ) :: gameModel.history
                             }
                     }
-                , newWordIndex gameModel.generator
+                , newWordIndex gameModel
                 )
 
             else
                 ( model, Cmd.none )
 
         NewWordIndex index ->
-            if List.member index gameModel.drawnIndex then
-                ( model, newWordIndex gameModel.generator )
+            let
+                wordsCount =
+                    Array.length Words.words
+
+                cycleDone =
+                    Set.size gameModel.drawnIndex >= wordsCount
+
+                -- Resposta atrasada de um sorteio pedido antes do último aceito
+                stale =
+                    if cycleDone then
+                        wordsCount > 1 && gameModel.currentIndex == Just index
+
+                    else
+                        Set.member index gameModel.drawnIndex
+            in
+            if stale then
+                ( model, newWordIndex gameModel )
 
             else
-                let
-                    newDrawnIndex =
-                        index :: gameModel.drawnIndex
-
-                    newGameModel =
-                        { gameModel | drawnIndex = newDrawnIndex }
-                in
                 case Array.get index Words.words of
                     Just word ->
                         ( { model
                             | gameModel =
-                                { newGameModel | word = word }
+                                { gameModel
+                                    | word = word
+                                    , currentIndex = Just index
+                                    , drawnIndex =
+                                        if cycleDone then
+                                            Set.singleton index
+
+                                        else
+                                            Set.insert index gameModel.drawnIndex
+                                    , drawCount = gameModel.drawCount + 1
+                                }
                           }
                         , Cmd.none
                         )
                             |> lockCorrect
 
                     Nothing ->
-                        ( { model | gameModel = newGameModel }, newWordIndex gameModel.generator )
+                        ( model, Cmd.none )
+
+
+{-| Intervalo entre ticks acima do qual a página foi congelada ou suspensa
+sem avisar, e a rodada deve pausar em vez de descontar esse tempo.
+-}
+interruptionMillis : Int
+interruptionMillis =
+    2000
+
+
+tickNow : Cmd Msg
+tickNow =
+    Task.perform (GameMsg << Tick) Time.now
+
+
+advanceRound : Time.Posix -> Int -> Model -> ( Model, Cmd Msg )
+advanceRound now elapsed ({ gameModel } as model) =
+    let
+        newTime =
+            max 0 (Time.posixToMillis gameModel.currentTime - elapsed)
+
+        newCurrent =
+            Time.millisToPosix newTime
+
+        justEnded =
+            newTime <= 0
+
+        newHistory =
+            if justEnded && Maybe.map Tuple.first (List.head gameModel.history) /= Just gameModel.word then
+                ( gameModel.word, Missed ) :: gameModel.history
+
+            else
+                gameModel.history
+
+        newModel =
+            { model
+                | gameModel =
+                    { gameModel
+                        | currentTime = newCurrent
+                        , status =
+                            if justEnded then
+                                GameOver
+
+                            else
+                                gameModel.status
+                        , history = newHistory
+                        , lastTick = Just now
+                    }
+            }
+    in
+    if justEnded then
+        ( newModel, Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ] )
+            |> lockTaps
+
+    else
+        ( newModel, Cmd.none )
+
+
+pauseRound : Model -> ( Model, Cmd Msg )
+pauseRound ({ gameModel } as model) =
+    ( { model | gameModel = { gameModel | status = GamePaused, lastTick = Nothing } }
+    , keepAwake False
+    )
+        |> lockTaps
 
 
 
@@ -708,6 +794,9 @@ viewGame ({ gameModel } as model) =
         GamePlaying ->
             viewPlaying model
 
+        GamePaused ->
+            viewPaused model
+
         GameOver ->
             viewGameOver model
 
@@ -758,7 +847,7 @@ viewPlaying { gameModel } =
                 [ text <| Tuple.second gameModel.questioner ++ " dá dicas para " ++ Tuple.second gameModel.guesser ]
             , Keyed.node "div"
                 [ class "word-stage", attribute "aria-live" "polite" ]
-                [ ( String.fromInt (List.length gameModel.drawnIndex)
+                [ ( String.fromInt gameModel.drawCount
                   , p [ class "word" ] [ text gameModel.word ]
                   )
                 ]
@@ -792,6 +881,32 @@ viewPlaying { gameModel } =
                 ]
                 [ Icons.check, text "Acertou" ]
             ]
+        ]
+    }
+
+
+viewPaused : Model -> Screen
+viewPaused { gameModel } =
+    { key = "paused"
+    , header = viewTimer gameModel
+    , main =
+        [ div [ class "round" ]
+            [ p [ class "round__pair" ]
+                [ text <| Tuple.second gameModel.questioner ++ " dá dicas para " ++ Tuple.second gameModel.guesser ]
+            , div [ class "card paused" ]
+                [ span [ class "paused__icon" ] [ Icons.clock ]
+                , h2 [ class "paused__title" ] [ text "Rodada pausada" ]
+                , p [ class "paused__text" ] [ text "O tempo para quando o jogo sai da tela." ]
+                ]
+            ]
+        ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick (GameMsg Resume)
+            ]
+            [ text "Continuar rodada", Icons.play ]
         ]
     }
 
@@ -1044,9 +1159,17 @@ getTimeString time =
                 >> String.padLeft 2 '0'
 
         totalSeconds =
-            Time.posixToMillis time // 1000
+            secondsLeft time
     in
     pad (totalSeconds // 60) ++ ":" ++ pad (modBy 60 totalSeconds)
+
+
+{-| Segundos inteiros que faltam, arredondados para cima: o cronômetro só
+mostra 00:00 quando o tempo acabou.
+-}
+secondsLeft : Time.Posix -> Int
+secondsLeft time =
+    (Time.posixToMillis time + 999) // 1000
 
 
 getCurrentPlayers : Int -> Array ( ( Int, String ), ( Int, String ) ) -> ( ( Int, String ), ( Int, String ) )
@@ -1055,14 +1178,41 @@ getCurrentPlayers index players =
         |> Maybe.withDefault ( ( 0, "Error" ), ( 0, "Error" ) )
 
 
-randomWord : Int -> Generator Int
-randomWord arrayLength =
-    Random.int 0 arrayLength
+{-| Índices que podem ser sorteados: os que ainda não saíram na partida ou,
+com a lista esgotada, todos menos a palavra atual (novo ciclo).
+-}
+wordPool : Int -> Set Int -> Maybe Int -> List Int
+wordPool wordsCount drawn current =
+    let
+        allIndexes =
+            List.range 0 (wordsCount - 1)
+
+        remaining =
+            List.filter (\index -> not (Set.member index drawn)) allIndexes
+
+        newCycle =
+            List.filter (\index -> Just index /= current) allIndexes
+    in
+    if not (List.isEmpty remaining) then
+        remaining
+
+    else if not (List.isEmpty newCycle) then
+        newCycle
+
+    else
+        allIndexes
 
 
-newWordIndex : Generator Int -> Cmd Msg
-newWordIndex generator =
-    Random.generate (GameMsg << NewWordIndex) generator
+newWordIndex : GameModel -> Cmd Msg
+newWordIndex gameModel =
+    let
+        pool =
+            wordPool (Array.length Words.words) gameModel.drawnIndex gameModel.currentIndex
+                |> Array.fromList
+    in
+    Random.int 0 (Array.length pool - 1)
+        |> Random.map (\position -> Array.get position pool |> Maybe.withDefault -1)
+        |> Random.generate (GameMsg << NewWordIndex)
 
 
 
@@ -1075,7 +1225,10 @@ subscriptions : Model -> Sub Msg
 subscriptions ({ gameModel } as model) =
     case gameModel.status of
         GamePlaying ->
-            Time.every 1000 (GameMsg << Tick)
+            Sub.batch
+                [ Time.every 200 (GameMsg << Tick)
+                , Browser.Events.onVisibilityChange (GameMsg << VisibilityChanged)
+                ]
 
         _ ->
             Sub.none
