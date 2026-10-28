@@ -52,7 +52,6 @@ type alias GameModel =
     , status : GameStatus
     , generator : Generator Int
     , drawnIndex : List Int
-    , toShowJump : Int
     , history : List ( String, WordResult )
     }
 
@@ -119,9 +118,18 @@ initGame =
     , status = GameShowingPlayers
     , generator = randomWord <| Array.length Words.words
     , drawnIndex = []
-    , toShowJump = 5
     , history = []
     }
+
+
+skipCost : Int
+skipCost =
+    5000
+
+
+canSkip : GameModel -> Bool
+canSkip gameModel =
+    Time.posixToMillis gameModel.currentTime > skipCost
 
 
 roundPresets : List ( Int, String )
@@ -388,13 +396,6 @@ updateGame msg ({ gameModel } as model) =
                     else
                         ( Time.millisToPosix newTime, gameModel.status )
 
-                newToShowJump =
-                    if gameModel.toShowJump > 0 then
-                        gameModel.toShowJump - 1
-
-                    else
-                        gameModel.toShowJump
-
                 justEnded =
                     newStatus == GameOver && gameModel.status /= GameOver
 
@@ -411,7 +412,6 @@ updateGame msg ({ gameModel } as model) =
                             { gameModel
                                 | currentTime = newCurrent
                                 , status = newStatus
-                                , toShowJump = newToShowJump
                                 , history = newHistory
                             }
                     }
@@ -477,11 +477,19 @@ updateGame msg ({ gameModel } as model) =
             )
 
         Jump ->
-            ( { model
-                | gameModel = { gameModel | history = ( gameModel.word, Missed ) :: gameModel.history }
-              }
-            , newWordIndex gameModel.generator
-            )
+            if canSkip gameModel then
+                ( { model
+                    | gameModel =
+                        { gameModel
+                            | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost)
+                            , history = ( gameModel.word, Missed ) :: gameModel.history
+                        }
+                  }
+                , newWordIndex gameModel.generator
+                )
+
+            else
+                ( model, Cmd.none )
 
         NewWordIndex index ->
             if List.member index gameModel.drawnIndex then
@@ -499,10 +507,7 @@ updateGame msg ({ gameModel } as model) =
                     Just word ->
                         ( { model
                             | gameModel =
-                                { newGameModel
-                                    | word = word
-                                    , toShowJump = 5
-                                }
+                                { newGameModel | word = word }
                           }
                         , Cmd.none
                         )
@@ -765,7 +770,7 @@ viewPlaying { gameModel } =
         ]
     , footer =
         [ div [ class "actions" ]
-            [ viewSkipButton gameModel.toShowJump
+            [ viewSkipButton (canSkip gameModel)
             , button
                 [ type_ "button"
                 , class "btn btn--success btn--lg"
@@ -804,27 +809,19 @@ viewTimer gameModel =
         ]
 
 
-viewSkipButton : Int -> Html Msg
-viewSkipButton toShowJump =
-    if toShowJump == 0 then
-        button
-            [ type_ "button"
-            , class "btn btn--secondary btn--lg"
-            , onClick (GameMsg Jump)
-            ]
-            [ Icons.skip, text "Pular" ]
-
-    else
-        button
-            [ type_ "button"
-            , class "btn btn--secondary btn--lg"
-            , disabled True
-            , attribute "aria-label" ("Pular disponível em " ++ String.fromInt toShowJump ++ " segundos")
-            ]
-            [ span [ class "skip-ring", progressStyle (toFloat toShowJump / 5) ]
-                [ span [ class "skip-ring__num" ] [ text <| String.fromInt toShowJump ] ]
-            , text "Pular"
-            ]
+viewSkipButton : Bool -> Html Msg
+viewSkipButton enabled =
+    button
+        [ type_ "button"
+        , class "btn btn--secondary btn--lg"
+        , disabled (not enabled)
+        , attribute "aria-label" "Pular (perde 5 segundos)"
+        , onClick (GameMsg Jump)
+        ]
+        [ Icons.skip
+        , text "Pular"
+        , span [ class "skip-cost" ] [ text "−5s" ]
+        ]
 
 
 viewGameOver : Model -> Screen

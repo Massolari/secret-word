@@ -41,16 +41,34 @@ Durante a rodada, tocar em Acertou SHALL somar 1 ao contador de acertos da rodad
 - **THEN** o contador mostra 3 com uma animação de incremento
 - **AND** uma nova palavra é exibida
 
-### Requirement: Pular com bloqueio
-O botão Pular SHALL ficar bloqueado nos primeiros 5 segundos de cada palavra, mostrando quantos segundos faltam e o progresso até liberar. Depois disso, tocar em Pular SHALL sortear uma nova palavra sem alterar o contador de acertos.
+### Requirement: Pular custa tempo
+Durante a rodada, o botão Pular SHALL estar disponível desde que a palavra aparece, sem espera, e SHALL indicar que pular custa 5 segundos. Tocar em Pular SHALL tirar 5 segundos do tempo restante da rodada e sortear uma nova palavra, sem alterar o contador de acertos. Quando restam 5 segundos ou menos, o botão SHALL ficar desabilitado e um toque nele SHALL NOT ter efeito.
 
-#### Scenario: Pular bloqueado
-- **WHEN** a palavra acabou de aparecer
-- **THEN** o botão Pular está desabilitado e mostra a contagem de 5 até 1
+#### Scenario: Pular logo que a palavra aparece
+- **WHEN** a palavra acabou de aparecer, restam 00:40 e o jogador toca em Pular
+- **THEN** o cronômetro passa a mostrar 00:35 e a barra de progresso diminui na mesma proporção
+- **AND** uma nova palavra é exibida e o contador de acertos não muda
 
-#### Scenario: Pular liberado
-- **WHEN** passaram 5 segundos desde que a palavra apareceu e o jogador toca em Pular
-- **THEN** uma nova palavra é exibida, o contador de acertos não muda e o bloqueio de 5 segundos recomeça
+#### Scenario: Pulos seguidos
+- **WHEN** restam 00:30 e o jogador toca em Pular duas vezes, sem esperar entre os toques
+- **THEN** o cronômetro passa a mostrar 00:20
+
+#### Scenario: Custo visível
+- **WHEN** a rodada está em andamento
+- **THEN** o botão Pular mostra que pular custa 5 segundos ("−5s")
+- **AND** um leitor de tela anuncia o botão como pular e perder 5 segundos
+
+#### Scenario: Tempo insuficiente
+- **WHEN** restam 5 segundos ou menos
+- **THEN** o botão Pular está desabilitado e tocar nele não muda a palavra nem o cronômetro
+
+#### Scenario: Limite exato
+- **WHEN** restam 00:06 e o jogador toca em Pular
+- **THEN** o cronômetro passa a mostrar 00:01 e o botão Pular fica desabilitado
+
+#### Scenario: Pulo leva aos últimos segundos
+- **WHEN** restam 00:14 e o jogador toca em Pular
+- **THEN** o cronômetro mostra 00:09 e o cronômetro e a barra mudam para a cor de alerta
 
 ### Requirement: Cronômetro com progresso
 Durante a rodada, o tempo restante SHALL aparecer no formato MM:SS e como uma barra de progresso que diminui a cada segundo. Nos últimos 10 segundos, o cronômetro SHALL ganhar destaque visual de alerta.
