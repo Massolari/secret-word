@@ -22,6 +22,7 @@
     --on-success: #ffffff;
     --warning: #b45309;
     --danger: #c8261a;
+    --on-danger: #ffffff;
     --avatar-l: 90%;
     --avatar-text-l: 30%;
 
@@ -63,6 +64,7 @@
         --on-success: #06210f;
         --warning: #fbbf24;
         --danger: #ff6b5e;
+        --on-danger: #2a0603;
         --avatar-l: 26%;
         --avatar-text-l: 82%;
 
@@ -241,6 +243,16 @@ input {
 }
 
 .btn--success:active {
+    filter: brightness(1.12);
+}
+
+.btn--danger {
+    background: var(--danger);
+    color: var(--on-danger);
+    box-shadow: var(--shadow-md);
+}
+
+.btn--danger:active {
     filter: brightness(1.12);
 }
 
@@ -709,6 +721,39 @@ input {
 }
 
 .paused__text {
+    color: var(--text-muted);
+}
+
+/* ---------- Round header ---------- */
+
+.round-bar {
+    position: relative;
+}
+
+.round-bar > .btn {
+    position: absolute;
+    top: calc((2.75rem - 48px) / 2);
+    right: 0;
+}
+
+/* ---------- Confirm end ---------- */
+
+.confirm {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-6) var(--space-4);
+    text-align: center;
+}
+
+.confirm__title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.confirm__text {
     color: var(--text-muted);
 }
 

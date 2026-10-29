@@ -82,6 +82,8 @@ type GameStatus
     | GamePlaying
     | GamePaused
     | GameOver
+    | GameConfirmingEnd GameStatus -- tela de onde a confirmação foi aberta
+    | GameFinished
 
 
 type WordResult
@@ -204,6 +206,10 @@ type GameMsg
     | NewWordIndex Int
     | Resume
     | VisibilityChanged Browser.Events.Visibility
+    | AskEnd
+    | CancelEnd
+    | ConfirmEnd
+    | NewGame
 
 
 
@@ -216,7 +222,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ preparingModel, gameModel } as model) =
     case msg of
         Start ->
-            if model.status /= Preparing then
+            if model.status /= Preparing || model.tapGuard.locked then
                 ( model, Cmd.none )
 
             else
@@ -360,19 +366,31 @@ acceptsGameMsg msg model =
         screen =
             case msg of
                 Play ->
-                    Just GameShowingPlayers
+                    Just ((==) GameShowingPlayers)
 
                 Correct ->
-                    Just GamePlaying
+                    Just ((==) GamePlaying)
 
                 Jump ->
-                    Just GamePlaying
+                    Just ((==) GamePlaying)
 
                 Restart ->
-                    Just GameOver
+                    Just ((==) GameOver)
 
                 Resume ->
-                    Just GamePaused
+                    Just ((==) GamePaused)
+
+                AskEnd ->
+                    Just (\status -> List.member status [ GameShowingPlayers, GamePlaying, GamePaused, GameOver ])
+
+                CancelEnd ->
+                    Just isConfirmingEnd
+
+                ConfirmEnd ->
+                    Just isConfirmingEnd
+
+                NewGame ->
+                    Just ((==) GameFinished)
 
                 Tick _ ->
                     Nothing
@@ -384,14 +402,24 @@ acceptsGameMsg msg model =
                     Nothing
     in
     case screen of
-        Just status ->
+        Just onScreen ->
             not model.tapGuard.locked
                 && not (msg == Correct && model.correctGuard.locked)
                 && model.status == Playing
-                && model.gameModel.status == status
+                && onScreen model.gameModel.status
 
         Nothing ->
             True
+
+
+isConfirmingEnd : GameStatus -> Bool
+isConfirmingEnd status =
+    case status of
+        GameConfirmingEnd _ ->
+            True
+
+        _ ->
+            False
 
 
 updateGame : GameMsg -> Model -> ( Model, Cmd Msg )
@@ -440,19 +468,6 @@ updateGame msg ({ gameModel } as model) =
 
         Restart ->
             let
-                playersUpdated =
-                    Dict.update
-                        (Tuple.first gameModel.questioner)
-                        (Maybe.map
-                            (\player -> { player | score = player.score + (gameModel.score // 2) })
-                        )
-                        model.players
-                        |> Dict.update
-                            (Tuple.first gameModel.guesser)
-                            (Maybe.map
-                                (\player -> { player | score = player.score + gameModel.score })
-                            )
-
                 newCurrentIndex =
                     if gameModel.currentPlayersIndex >= (Array.length gameModel.playersOrder - 1) then
                         0
@@ -474,7 +489,53 @@ updateGame msg ({ gameModel } as model) =
                         , status = GameShowingPlayers
                         , history = []
                     }
-                , players = playersUpdated
+                , players = addRoundPoints gameModel model.players
+              }
+            , Cmd.none
+            )
+                |> lockTaps
+
+        AskEnd ->
+            case gameModel.status of
+                GamePlaying ->
+                    let
+                        ( paused, cmd ) =
+                            pauseRound model
+                    in
+                    ( askEnd paused, cmd )
+
+                _ ->
+                    ( askEnd model, Cmd.none )
+                        |> lockTaps
+
+        CancelEnd ->
+            case gameModel.status of
+                GameConfirmingEnd origin ->
+                    ( { model | gameModel = { gameModel | status = origin } }, Cmd.none )
+                        |> lockTaps
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ConfirmEnd ->
+            ( { model
+                | gameModel = { gameModel | status = GameFinished }
+                , players =
+                    if gameModel.status == GameConfirmingEnd GameOver then
+                        addRoundPoints gameModel model.players
+
+                    else
+                        model.players
+              }
+            , Cmd.none
+            )
+                |> lockTaps
+
+        NewGame ->
+            ( { model
+                | status = Preparing
+                , gameModel = initGame
+                , players = Dict.map (\_ player -> { player | score = 0 }) model.players
               }
             , Cmd.none
             )
@@ -614,6 +675,25 @@ pauseRound ({ gameModel } as model) =
     , keepAwake False
     )
         |> lockTaps
+
+
+askEnd : Model -> Model
+askEnd ({ gameModel } as model) =
+    { model | gameModel = { gameModel | status = GameConfirmingEnd gameModel.status } }
+
+
+{-| Soma os pontos da rodada: quem adivinha ganha os acertos e quem dá as
+dicas ganha a metade, arredondada para baixo.
+-}
+addRoundPoints : GameModel -> Dict Int Player -> Dict Int Player
+addRoundPoints gameModel players =
+    players
+        |> Dict.update
+            (Tuple.first gameModel.questioner)
+            (Maybe.map (\player -> { player | score = player.score + (gameModel.score // 2) }))
+        |> Dict.update
+            (Tuple.first gameModel.guesser)
+            (Maybe.map (\player -> { player | score = player.score + gameModel.score }))
 
 
 
@@ -800,6 +880,12 @@ viewGame ({ gameModel } as model) =
         GameOver ->
             viewGameOver model
 
+        GameConfirmingEnd origin ->
+            viewConfirmEnd origin
+
+        GameFinished ->
+            viewFinished model
+
 
 viewGameShowingPlayers : Model -> Screen
 viewGameShowingPlayers ({ gameModel } as model) =
@@ -833,6 +919,7 @@ viewGameShowingPlayers ({ gameModel } as model) =
             , onClick (GameMsg Play)
             ]
             [ text "Começar rodada", Icons.play ]
+        , viewEndButton
         ]
     }
 
@@ -840,7 +927,17 @@ viewGameShowingPlayers ({ gameModel } as model) =
 viewPlaying : Model -> Screen
 viewPlaying { gameModel } =
     { key = "round"
-    , header = viewTimer gameModel
+    , header =
+        div [ class "round-bar" ]
+            [ viewTimer gameModel
+            , button
+                [ type_ "button"
+                , class "btn btn--ghost btn--icon"
+                , attribute "aria-label" "Encerrar partida"
+                , onClick (GameMsg AskEnd)
+                ]
+                [ Icons.close ]
+            ]
     , main =
         [ div [ class "round" ]
             [ p [ class "round__pair" ]
@@ -907,6 +1004,7 @@ viewPaused { gameModel } =
             , onClick (GameMsg Resume)
             ]
             [ text "Continuar rodada", Icons.play ]
+        , viewEndButton
         ]
     }
 
@@ -983,6 +1081,88 @@ viewGameOver ({ gameModel } as model) =
             , onClick (GameMsg Restart)
             ]
             [ text "Continuar" ]
+        , viewEndButton
+        ]
+    }
+
+
+viewEndButton : Html Msg
+viewEndButton =
+    button
+        [ type_ "button"
+        , class "btn btn--ghost btn--block"
+        , onClick (GameMsg AskEnd)
+        ]
+        [ text "Encerrar partida" ]
+
+
+viewConfirmEnd : GameStatus -> Screen
+viewConfirmEnd origin =
+    { key = "confirm-end"
+    , header =
+        div [ class "topbar" ]
+            [ span [ class "topbar__title" ] [ text "Palavra Secreta" ] ]
+    , main =
+        [ div [ class "card confirm" ]
+            [ h2 [ class "confirm__title" ] [ text "Encerrar a partida?" ]
+            , p [ class "confirm__text" ]
+                [ text <|
+                    case origin of
+                        GameOver ->
+                            "Os pontos desta rodada entram no placar final."
+
+                        GamePaused ->
+                            "A rodada pausada não vai contar pontos."
+
+                        _ ->
+                            "O placar atual será o placar final."
+                ]
+            ]
+        ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--danger btn--lg btn--block"
+            , onClick (GameMsg ConfirmEnd)
+            ]
+            [ text "Encerrar" ]
+        , button
+            [ type_ "button"
+            , class "btn btn--secondary btn--lg btn--block"
+            , onClick (GameMsg CancelEnd)
+            ]
+            [ text "Voltar ao jogo" ]
+        ]
+    }
+
+
+viewFinished : Model -> Screen
+viewFinished model =
+    { key = "final"
+    , header =
+        div []
+            [ h1 [ class "over__title" ] [ text "Fim de jogo" ]
+            , p [ class "over__subtitle" ]
+                [ text <|
+                    case List.map .name (leaders model.players) of
+                        [] ->
+                            "Ninguém pontuou"
+
+                        [ winner ] ->
+                            winner ++ " venceu!"
+
+                        names ->
+                            "Empate entre " ++ joinNames names
+                ]
+            ]
+    , main = [ viewScoreboard model ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick (GameMsg NewGame)
+            ]
+            [ text "Nova partida" ]
         ]
     }
 
@@ -1043,10 +1223,8 @@ viewScoreboard model =
         scores =
             List.map (Tuple.second >> .score) players
 
-        topScore =
-            scores
-                |> List.maximum
-                |> Maybe.withDefault 0
+        leaderIds =
+            List.map Tuple.first (leaderEntries model.players)
     in
     section [ class "section" ]
         [ h2 [ class "section__title" ] [ text "Placar" ]
@@ -1055,7 +1233,7 @@ viewScoreboard model =
                 (\( id, player ) ->
                     let
                         leader =
-                            topScore > 0 && player.score == topScore
+                            List.member id leaderIds
 
                         position =
                             1 + List.length (List.filter (\score -> score > player.score) scores)
@@ -1132,6 +1310,42 @@ lockCorrect ( model, cmd ) =
             |> Task.perform (\_ -> ReleaseCorrect correctGuard.token)
         ]
     )
+
+
+{-| Jogadores com a maior pontuação, quando ela é maior que zero, na ordem
+do placar.
+-}
+leaderEntries : Dict Int Player -> List ( Int, Player )
+leaderEntries players =
+    let
+        topScore =
+            Dict.values players
+                |> List.map .score
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    Dict.toList players
+        |> List.filter (\( _, player ) -> topScore > 0 && player.score == topScore)
+
+
+leaders : Dict Int Player -> List Player
+leaders =
+    leaderEntries >> List.map Tuple.second
+
+
+{-| Junta nomes com vírgulas e "e" antes do último: "Ana, Beto e Caio".
+-}
+joinNames : List String -> String
+joinNames names =
+    case List.reverse names of
+        [] ->
+            ""
+
+        last :: [] ->
+            last
+
+        last :: rest ->
+            String.join ", " (List.reverse rest) ++ " e " ++ last
 
 
 activePlayers : Model -> Dict Int Player

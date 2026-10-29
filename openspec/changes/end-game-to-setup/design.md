@@ -47,7 +47,7 @@ type GameStatus
 
 `AskEnd`, `CancelEnd`, `ConfirmEnd` e `NewGame` entram em `GameMsg`, e assim passam pela mesma porta de `acceptsGameMsg` que já cuida da trava de 500 ms e da tela certa. `NewGame` muda `model.status` para `Preparing`, o que `updateGame` já pode fazer porque recebe o `Model` inteiro.
 
-`acceptsGameMsg` passa de `Maybe GameStatus` para `Maybe (GameStatus -> Bool)`, porque `AskEnd` vale em quatro telas e `CancelEnd`/`ConfirmEnd` valem em qualquer `GameConfirmingEnd _`. Como o filtro olha a mensagem, e não a posição do botão, o ícone do cabeçalho da rodada fica sob a mesma trava de 500 ms que os botões do rodapé. Isso inclui a troca anúncio → rodada e a volta confirmação → rodada. `AskEnd` não depende de `correctGuard`, que continua valendo só para `Correct`.
+`acceptsGameMsg` passa de `Maybe GameStatus` para `Maybe (GameStatus -> Bool)`, porque `AskEnd` vale em quatro telas e `CancelEnd`/`ConfirmEnd` valem em qualquer `GameConfirmingEnd _`. Como o filtro olha a mensagem, e não a posição do botão, o ícone do cabeçalho da rodada fica sob a mesma trava de 500 ms que os botões do rodapé. Isso inclui a troca anúncio → rodada e a volta pausa → rodada. `AskEnd` não depende de `correctGuard`, que continua valendo só para `Correct`.
 
 | Mensagem | Aceita em |
 |---|---|
