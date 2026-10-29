@@ -20,9 +20,9 @@
 ## 4. Verificação integrada
 
 - [x] 4.1 Rodar `yarn start`, cadastrar dois jogadores e, ainda na preparação, recarregar e usar o voltar. Verificar os cenários "Recarregar na preparação" e "Voltar na preparação": nada é perguntado.
-- [ ] 4.2 Começar a partida e recarregar no anúncio da dupla, cancelar, recarregar de novo e confirmar. Verificar os cenários "Recarregar durante a partida", "Desistir de recarregar" e "Confirmar o recarregamento".
+- [x] 4.2 Começar a partida e recarregar no anúncio da dupla, cancelar, recarregar de novo e confirmar. Verificar os cenários "Recarregar durante a partida", "Desistir de recarregar" e "Confirmar o recarregamento".
 - [x] 4.3 Abrir o jogo a partir de outra página (ex.: `about:blank` e depois a URL do jogo), começar a partida e usar o voltar no anúncio, numa rodada com cerca de 00:30, e no fim da rodada. Verificar os cenários "Voltar no anúncio da dupla", "Voltar no meio da rodada", "Diálogo aberto por um tempo" (esperar 1 min) e "Voltar no fim da rodada".
 - [x] 4.4 Com o diálogo aberto, usar o voltar de novo, apertar Esc, tocar em Continuar partida e tocar no fundo onde fica o botão do rodapé. Verificar os cenários "Voltar com o diálogo aberto", "Teclado", "Continuar depois de voltar na rodada", "Proteção continua ativa" e "Toque fora do diálogo".
 - [x] 4.5 Tocar em Sair e verificar o cenário "Sair pelo diálogo": o navegador volta para a página anterior sem outra pergunta.
-- [ ] 4.6 Num celular Android (Chrome), repetir 4.3 a 4.5 com o gesto de voltar e conferir que a guarda não é pulada. Num iPhone (Safari), conferir o gesto de voltar e registrar no resumo da change que recarregar não pede confirmação lá (limitação aceita no design).
+- [x] 4.6 Num celular Android (Chrome), repetir 4.3 a 4.5 com o gesto de voltar e conferir que a guarda não é pulada. Num iPhone (Safari), conferir o gesto de voltar e registrar no resumo da change que recarregar não pede confirmação lá (limitação aceita no design).
 - [x] 4.7 Rodar `yarn build` e verificar que o build termina sem erros.
