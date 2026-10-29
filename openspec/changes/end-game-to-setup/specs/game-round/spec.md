@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Encerrar partida
-As telas de anúncio da dupla, de rodada pausada e de fim da rodada SHALL oferecer um botão Encerrar partida no rodapé, abaixo da ação principal e com menos destaque visual que ela. A rodada em andamento SHALL NOT oferecer esse botão. Tocar em Encerrar partida SHALL abrir a confirmação para encerrar, sem mudar o placar.
+Todas as telas da partida SHALL oferecer um botão Encerrar partida. No anúncio da dupla, na rodada pausada e no fim da rodada, ele SHALL ficar no rodapé, abaixo da ação principal e com menos destaque visual que ela. Na rodada em andamento, ele SHALL ser um botão de ícone no cabeçalho, ao lado do cronômetro, com rótulo acessível "Encerrar partida". Tocar nele SHALL abrir a confirmação para encerrar, sem mudar o placar.
 
 #### Scenario: Anúncio da dupla
 - **WHEN** a tela mostra o anúncio da dupla
@@ -9,7 +9,33 @@ As telas de anúncio da dupla, de rodada pausada e de fim da rodada SHALL oferec
 
 #### Scenario: Rodada em andamento
 - **WHEN** a rodada está em andamento
-- **THEN** o botão Encerrar partida não aparece
+- **THEN** o cabeçalho mostra, ao lado do cronômetro, um botão de ícone para encerrar a partida
+- **AND** o rodapé continua só com Pular e Acertou
+
+#### Scenario: Leitor de tela na rodada
+- **WHEN** um leitor de tela foca o botão de ícone do cabeçalho da rodada
+- **THEN** ele anuncia "Encerrar partida"
+
+### Requirement: Rodada parada durante a confirmação
+Aberta durante a rodada em andamento, a confirmação para encerrar SHALL parar a rodada como na pausa: o cronômetro para, a palavra não aparece, Acertou e Pular não ficam disponíveis e o pedido de tela acesa é liberado. O tempo com a confirmação aberta SHALL NOT ser descontado. Voltar ao jogo SHALL retomar a rodada na hora, a partir do tempo que restava, com a mesma palavra e o mesmo contador de acertos, e pedir de novo para manter a tela acesa.
+
+#### Scenario: Encerrar durante a rodada
+- **WHEN** restam 00:40, o contador está em 3 e o jogador toca no botão de encerrar do cabeçalho
+- **THEN** aparece a confirmação para encerrar, sem a palavra, Acertou e Pular
+- **AND** o tempo restante fica parado em 00:40
+
+#### Scenario: Confirmação aberta por um tempo
+- **WHEN** a confirmação foi aberta com 00:40 restantes e fica aberta por 1 minuto
+- **THEN** a rodada não terminou e continua com 00:40 restantes
+
+#### Scenario: Voltar ao jogo durante a rodada
+- **WHEN** a confirmação foi aberta com 00:40 restantes, 3 acertos e a palavra Cacto, e o jogador toca em Voltar ao jogo
+- **THEN** a rodada volta na hora, com a palavra Cacto, o contador em 3 e o cronômetro contando a partir de 00:40
+
+#### Scenario: Tela acesa
+- **WHEN** a confirmação foi aberta durante a rodada
+- **THEN** a tela segue o tempo de bloqueio do aparelho
+- **AND** ao voltar ao jogo, a tela volta a ficar acesa
 
 #### Scenario: Abrir a confirmação
 - **WHEN** o jogador toca em Encerrar partida no fim da rodada
@@ -37,7 +63,7 @@ A confirmação SHALL perguntar se o grupo quer encerrar a partida e oferecer En
 - **THEN** a confirmação aparece como uma tela do jogo, e não como um alerta ou confirmação nativa do navegador
 
 ### Requirement: Placar final
-Ao confirmar o encerramento, o jogo SHALL mostrar a tela de placar final, com um título de fim de jogo, os vencedores e o placar completo. Encerrando no fim da rodada, os pontos dessa rodada SHALL entrar no placar final. Encerrando com a rodada pausada, a rodada interrompida SHALL NOT dar pontos. São vencedores os jogadores com a maior pontuação, quando ela é maior que zero. Se ninguém pontuou, a tela SHALL dizer que não houve vencedor.
+Ao confirmar o encerramento, o jogo SHALL mostrar a tela de placar final, com um título de fim de jogo, os vencedores e o placar completo. Encerrando no fim da rodada, os pontos dessa rodada SHALL entrar no placar final. Encerrando durante a rodada ou com ela pausada, a rodada interrompida SHALL NOT dar pontos. São vencedores os jogadores com a maior pontuação, quando ela é maior que zero. Se ninguém pontuou, a tela SHALL dizer que não houve vencedor.
 
 #### Scenario: Encerrar no fim da rodada
 - **WHEN** Ana tem 3 pontos e Beto 4, Ana deu dicas para Beto numa rodada que terminou com 5 acertos e o grupo encerra a partida na tela de fim dessa rodada
@@ -52,6 +78,10 @@ Ao confirmar o encerramento, o jogo SHALL mostrar a tela de placar final, com um
 - **WHEN** Ana tem 2 pontos e Beto 2, a rodada pausou com 4 acertos e o grupo encerra a partida
 - **THEN** o placar final mostra Ana e Beto com 2 pontos cada
 - **AND** a tela indica empate entre Ana e Beto
+
+#### Scenario: Encerrar durante a rodada
+- **WHEN** Ana tem 3 pontos e Beto 1, Ana dá dicas para Beto, a rodada está em andamento com 4 acertos e o grupo encerra a partida
+- **THEN** o placar final mostra Ana com 3 pontos e Beto com 1
 
 #### Scenario: Ninguém pontuou
 - **WHEN** todos os jogadores têm 0 pontos e o grupo encerra a partida
@@ -93,7 +123,7 @@ O placar SHALL listar todos os jogadores do maior para o menor número de pontos
 - **THEN** o placar final mostra Beto, Caio e Ana, nessa ordem, com Beto destacado e com o troféu
 
 ### Requirement: Proteção contra toques na troca de tela
-Depois de cada troca de tela da partida (preparação → anúncio, anúncio → rodada, rodada → pausa, pausa → rodada, rodada → fim, fim → anúncio, anúncio, pausa ou fim → confirmação para encerrar, confirmação → tela anterior, confirmação → placar final, placar final → preparação), os botões do rodapé da nova tela SHALL ignorar toques e teclas nos primeiros 500 ms e responder normalmente depois. A aparência dos botões SHALL NOT mudar por causa desse bloqueio. Uma ação SHALL valer só na tela a que pertence. Se a tela já trocou, a ação SHALL ser ignorada.
+Depois de cada troca de tela da partida (preparação → anúncio, anúncio → rodada, rodada → pausa, pausa → rodada, rodada → fim, fim → anúncio, anúncio, rodada, pausa ou fim → confirmação para encerrar, confirmação → tela anterior, confirmação → placar final, placar final → preparação), os botões do rodapé da nova tela e o botão Encerrar partida do cabeçalho da rodada SHALL ignorar toques e teclas nos primeiros 500 ms e responder normalmente depois. A aparência dos botões SHALL NOT mudar por causa desse bloqueio. Uma ação SHALL valer só na tela a que pertence. Se a tela já trocou, a ação SHALL ser ignorada.
 
 #### Scenario: Acertou no fim do tempo
 - **WHEN** o tempo acaba enquanto o jogador toca repetidamente em Acertou, e um toque cai em Continuar até 500 ms depois da troca
@@ -120,6 +150,14 @@ Depois de cada troca de tela da partida (preparação → anúncio, anúncio →
 #### Scenario: Toque duplo em Encerrar partida
 - **WHEN** o jogador toca duas vezes seguidas em Encerrar partida
 - **THEN** a confirmação para encerrar aparece e continua visível, sem ir para o placar final
+
+#### Scenario: Toque duplo em Voltar ao jogo durante a rodada
+- **WHEN** a confirmação foi aberta durante a rodada e o jogador toca duas vezes seguidas em Voltar ao jogo
+- **THEN** a rodada volta e continua em andamento, sem abrir a confirmação de novo nem contar acerto
+
+#### Scenario: Encerrar logo depois de Começar rodada
+- **WHEN** o jogador toca em Começar rodada e, menos de 500 ms depois, toca no botão de encerrar do cabeçalho
+- **THEN** a rodada continua em andamento e a confirmação não aparece
 
 #### Scenario: Toque duplo em Encerrar
 - **WHEN** na confirmação, o jogador toca duas vezes seguidas em Encerrar
