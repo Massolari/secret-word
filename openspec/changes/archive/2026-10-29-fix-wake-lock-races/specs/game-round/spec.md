@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Tela acesa durante a rodada
-Enquanto uma rodada está em andamento, o jogo SHALL pedir ao navegador que mantenha a tela acesa, quando houver suporte, e SHALL liberar esse pedido quando a rodada termina. Em nenhum momento SHALL haver mais de um pedido de tela acesa ativo, e depois do fim da rodada nenhum pedido SHALL continuar ativo, mesmo quando rodadas começam e terminam em sequência rápida ou o app sai e volta da tela enquanto um pedido está em andamento. Se o pedido falhar ou não houver suporte, o jogo SHALL continuar normalmente.
+Enquanto uma rodada está em andamento, o jogo SHALL pedir ao navegador que mantenha a tela acesa, quando houver suporte, e SHALL liberar esse pedido quando a rodada termina. Em nenhum momento SHALL haver mais de um pedido de tela acesa ativo, e depois do fim da rodada nenhum pedido SHALL continuar ativo. Se o pedido falhar ou não houver suporte, o jogo SHALL continuar normalmente.
 
 #### Scenario: Rodada longa
 - **WHEN** uma rodada de 3min está em andamento num navegador com suporte
