@@ -84,7 +84,9 @@ Adicionar `exitPrompt : Bool` ao `Model`, com `False` em `init`. Novas mensagens
 - `.dialog` (reaproveitando `.card`) com `role="dialog"`, `aria-modal="true"` e `aria-labelledby` para o título "Sair da partida?", o texto "O placar e a vez de cada dupla serão perdidos." e os botões **Continuar partida** (`btn--primary btn--lg btn--block`, com o id usado no foco) e **Sair** (`btn--ghost btn--block`), com a ação principal embaixo, ao alcance do polegar, como no rodapé das telas;
 - `keydown` com Esc no diálogo → `StayInGame`.
 
-Em `index.css`: `.dialog-backdrop` com `position: fixed; inset: 0`, fundo escurecido semitransparente e o diálogo ancorado embaixo dentro da área segura, com `fade-in` na entrada, que já é desligado pelo bloco `prefers-reduced-motion`. As cores vêm dos tokens existentes, então o tema escuro sai junto.
+Em `index.css`: `.dialog-backdrop` com `position: fixed; inset: 0`, fundo escurecido semitransparente e o diálogo ancorado embaixo dentro da área segura, com `fade-in` no fundo e `screen-in` no diálogo. No bloco `prefers-reduced-motion`, o diálogo passa a usar só `fade-in`, como as outras telas. As cores vêm dos tokens existentes, então o tema escuro sai junto.
+
+O Esc precisa de um decoder de evento, então `elm/json` passa de dependência indireta para direta em `elm.json`, na mesma versão 1.1.4. Nenhum pacote novo é baixado.
 
 ## Risks / Trade-offs
 

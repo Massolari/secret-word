@@ -7,9 +7,10 @@ import Browser.Events
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, fieldset, form, h1, h2, input, label, legend, li, ol, p, section, span, text, ul)
 import Html.Attributes exposing (attribute, autocomplete, checked, class, classList, disabled, id, maxlength, name, novalidate, placeholder, type_, value)
-import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
+import Html.Events exposing (on, onCheck, onClick, onInput, onSubmit)
 import Html.Keyed as Keyed
 import Icons
+import Json.Decode as Decode
 import Process
 import Random
 import Set exposing (Set)
@@ -31,6 +32,7 @@ type alias Model =
     , gameModel : GameModel
     , tapGuard : TapGuard
     , correctGuard : TapGuard
+    , exitPrompt : Bool
     }
 
 
@@ -97,6 +99,7 @@ init =
       , gameModel = initGame
       , tapGuard = { locked = False, token = 0 }
       , correctGuard = { locked = False, token = 0 }
+      , exitPrompt = False
       }
     , Cmd.none
     )
@@ -160,6 +163,11 @@ playerNameInputId =
     "player-name"
 
 
+exitPromptStayId : String
+exitPromptStayId =
+    "exit-prompt-stay"
+
+
 
 -----------
 -- Ports --
@@ -170,6 +178,15 @@ port vibrate : List Int -> Cmd msg
 
 
 port keepAwake : Bool -> Cmd msg
+
+
+port protectGame : Bool -> Cmd msg
+
+
+port leaveGame : () -> Cmd msg
+
+
+port backPressed : (() -> msg) -> Sub msg
 
 
 
@@ -185,6 +202,9 @@ type Msg
     | GameMsg GameMsg
     | ReleaseTaps Int
     | ReleaseCorrect Int
+    | BackPressed
+    | StayInGame
+    | LeaveGame
 
 
 type PreparingMsg
@@ -264,7 +284,7 @@ update msg ({ preparingModel, gameModel } as model) =
                     , preparingModel = { preparingModel | removing = Set.empty }
                     , status = Playing
                   }
-                , Cmd.none
+                , protectGame True
                 )
                     |> lockTaps
 
@@ -294,6 +314,36 @@ update msg ({ preparingModel, gameModel } as model) =
 
             else
                 ( model, Cmd.none )
+
+        BackPressed ->
+            if model.status /= Playing then
+                ( model, Cmd.none )
+
+            else if model.exitPrompt then
+                update StayInGame model
+
+            else
+                let
+                    ( pausedModel, pauseCmd ) =
+                        if gameModel.status == GamePlaying then
+                            pauseRound model
+
+                        else
+                            ( model, Cmd.none )
+                in
+                ( { pausedModel | exitPrompt = True }
+                , Cmd.batch
+                    [ pauseCmd
+                    , Task.attempt (always NoOp) (Browser.Dom.focus exitPromptStayId)
+                    ]
+                )
+
+        StayInGame ->
+            ( { model | exitPrompt = False }, Cmd.none )
+                |> lockTaps
+
+        LeaveGame ->
+            ( model, leaveGame () )
 
 
 updatePreparing : PreparingMsg -> Model -> ( Model, Cmd Msg )
@@ -386,6 +436,7 @@ acceptsGameMsg msg model =
     case screen of
         Just status ->
             not model.tapGuard.locked
+                && not model.exitPrompt
                 && not (msg == Correct && model.correctGuard.locked)
                 && model.status == Playing
                 && model.gameModel.status == status
@@ -643,10 +694,62 @@ view model =
     in
     Keyed.node "div"
         [ class "app" ]
-        [ ( screen.key ++ "-header", Html.header [ class "app__header" ] [ screen.header ] )
-        , ( screen.key ++ "-main", Html.main_ [ class "app__main" ] screen.main )
-        , ( screen.key ++ "-footer", Html.footer [ class "app__footer" ] screen.footer )
+        ([ ( screen.key ++ "-header", Html.header [ class "app__header" ] [ screen.header ] )
+         , ( screen.key ++ "-main", Html.main_ [ class "app__main" ] screen.main )
+         , ( screen.key ++ "-footer", Html.footer [ class "app__footer" ] screen.footer )
+         ]
+            ++ (if model.exitPrompt then
+                    [ ( "exit-prompt", viewExitPrompt ) ]
+
+                else
+                    []
+               )
+        )
+
+
+viewExitPrompt : Html Msg
+viewExitPrompt =
+    div [ class "dialog-backdrop" ]
+        [ div
+            [ class "card dialog"
+            , attribute "role" "dialog"
+            , attribute "aria-modal" "true"
+            , attribute "aria-labelledby" "exit-prompt-title"
+            , attribute "aria-describedby" "exit-prompt-text"
+            , on "keydown" (onEscape StayInGame)
+            ]
+            [ h2 [ id "exit-prompt-title", class "dialog__title" ] [ text "Sair da partida?" ]
+            , p [ id "exit-prompt-text", class "dialog__text" ] [ text "O placar e a vez de cada dupla serão perdidos." ]
+            , div [ class "dialog__actions" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn--ghost btn--block"
+                    , onClick LeaveGame
+                    ]
+                    [ text "Sair" ]
+                , button
+                    [ type_ "button"
+                    , id exitPromptStayId
+                    , class "btn btn--primary btn--lg btn--block"
+                    , onClick StayInGame
+                    ]
+                    [ text "Continuar partida" ]
+                ]
+            ]
         ]
+
+
+onEscape : Msg -> Decode.Decoder Msg
+onEscape msg =
+    Decode.field "key" Decode.string
+        |> Decode.andThen
+            (\key ->
+                if key == "Escape" then
+                    Decode.succeed msg
+
+                else
+                    Decode.fail "not escape"
+            )
 
 
 viewPreparing : Model -> Screen
@@ -1228,15 +1331,26 @@ newWordIndex gameModel =
 
 subscriptions : Model -> Sub Msg
 subscriptions ({ gameModel } as model) =
-    case gameModel.status of
-        GamePlaying ->
-            Sub.batch
-                [ Time.every 200 (GameMsg << Tick)
-                , Browser.Events.onVisibilityChange (GameMsg << VisibilityChanged)
-                ]
+    let
+        roundSubs =
+            case gameModel.status of
+                GamePlaying ->
+                    [ Time.every 200 (GameMsg << Tick)
+                    , Browser.Events.onVisibilityChange (GameMsg << VisibilityChanged)
+                    ]
 
-        _ ->
-            Sub.none
+                _ ->
+                    []
+
+        sessionSubs =
+            case model.status of
+                Playing ->
+                    [ backPressed (\_ -> BackPressed) ]
+
+                Preparing ->
+                    []
+    in
+    Sub.batch (sessionSubs ++ roundSubs)
 
 
 
