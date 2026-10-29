@@ -431,6 +431,25 @@ input {
     border-color: var(--accent);
 }
 
+.field[aria-invalid="true"],
+.field[aria-invalid="true"]:focus {
+    border-color: var(--danger);
+}
+
+.add-player-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.field-error {
+    font-size: 0.875rem;
+    color: var(--danger);
+}
+
+.field-error:not(:empty) {
+    margin-top: var(--space-1);
+}
+
 .players {
     display: flex;
     flex-direction: column;
