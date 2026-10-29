@@ -7,7 +7,7 @@ import Browser.Events
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, fieldset, form, h1, h2, input, label, legend, li, ol, p, section, span, text, ul)
 import Html.Attributes exposing (attribute, autocomplete, checked, class, classList, disabled, id, maxlength, name, novalidate, placeholder, type_, value)
-import Html.Events exposing (on, onCheck, onClick, onInput, onSubmit)
+import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Html.Keyed as Keyed
 import Icons
 import Json.Decode as Decode
@@ -716,7 +716,6 @@ viewExitPrompt =
             , attribute "aria-modal" "true"
             , attribute "aria-labelledby" "exit-prompt-title"
             , attribute "aria-describedby" "exit-prompt-text"
-            , on "keydown" (onEscape StayInGame)
             ]
             [ h2 [ id "exit-prompt-title", class "dialog__title" ] [ text "Sair da partida?" ]
             , p [ id "exit-prompt-text", class "dialog__text" ] [ text "O placar e a vez de cada dupla serão perdidos." ]
@@ -1349,8 +1348,15 @@ subscriptions ({ gameModel } as model) =
 
                 Preparing ->
                     []
+
+        exitPromptSubs =
+            if model.exitPrompt then
+                [ Browser.Events.onKeyDown (onEscape StayInGame) ]
+
+            else
+                []
     in
-    Sub.batch (sessionSubs ++ roundSubs)
+    Sub.batch (sessionSubs ++ exitPromptSubs ++ roundSubs)
 
 
 

@@ -82,7 +82,7 @@ Adicionar `exitPrompt : Bool` ao `Model`, com `False` em `init`. Novas mensagens
 
 - fundo `.dialog-backdrop` cobrindo a tela inteira, que recebe os toques sem fazer nada;
 - `.dialog` (reaproveitando `.card`) com `role="dialog"`, `aria-modal="true"` e `aria-labelledby` para o título "Sair da partida?", o texto "O placar e a vez de cada dupla serão perdidos." e os botões **Continuar partida** (`btn--primary btn--lg btn--block`, com o id usado no foco) e **Sair** (`btn--ghost btn--block`), com a ação principal embaixo, ao alcance do polegar, como no rodapé das telas;
-- `keydown` com Esc no diálogo → `StayInGame`.
+- Esc → `StayInGame`, ouvido em `Browser.Events.onKeyDown` (assinado em `subscriptions` só com o diálogo aberto) e não no elemento do diálogo: um toque no texto do diálogo tira o foco para o `body`, e um `keydown` no diálogo deixaria de receber a tecla.
 
 Em `index.css`: `.dialog-backdrop` com `position: fixed; inset: 0`, fundo escurecido semitransparente e o diálogo ancorado embaixo dentro da área segura, com `fade-in` no fundo e `screen-in` no diálogo. No bloco `prefers-reduced-motion`, o diálogo passa a usar só `fade-in`, como as outras telas. As cores vêm dos tokens existentes, então o tema escuro sai junto.
 
