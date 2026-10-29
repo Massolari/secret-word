@@ -35,6 +35,6 @@ Fora do escopo: proteger a partida contra recarregar a página ou contra o volta
 ## Impact
 
 - `src/Main.elm`: novos estados de tela no fluxo da partida (confirmação de encerramento e placar final) e novas mensagens para pedir, cancelar e confirmar o encerramento e para voltar à preparação. A soma dos pontos da rodada sai de `Restart` para um helper reaproveitado ao encerrar no fim da rodada. A volta à preparação zera `gameModel` e as pontuações dos jogadores. `acceptsGameMsg` ganha as novas mensagens. Há novas views para a confirmação e o placar final. O botão Encerrar partida entra nas views de anúncio, pausa e fim da rodada, e como ícone no header de `viewPlaying`, ao lado de `viewTimer`. Abrir a confirmação na rodada reaproveita a pausa existente (`pauseRound`), e a volta passa pela tela de pausa e pelo `Resume`.
-- `src/index.css`: estilo da confirmação, do placar final e do cabeçalho da rodada com o ícone, reaproveitando `.card`, `.btn--ghost`, `.btn--icon` e `.scoreboard`. Possivelmente uma variante de botão de perigo com `--danger`, que já existe nos dois temas.
+- `src/index.css`: estilo da confirmação, do placar final e do cabeçalho da rodada com o ícone, reaproveitando `.card`, `.btn--ghost`, `.btn--icon` e `.scoreboard`. Possivelmente uma variante de botão de perigo com `--danger`, que já existe nos dois temas. Correção do transbordo horizontal da linha Pular/Acertou em telas de 320 px, que já existia antes e impedia a verificação de layout desta change.
 - `src/index.js`: sem mudança.
 - Sem dependências novas.

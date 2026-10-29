@@ -810,6 +810,20 @@ input {
     min-height: 64px;
 }
 
+/* Em telas estreitas, os botões encolhem e o "−5s" do Pular quebra linha */
+@media (max-width: 360px) {
+    .actions {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    }
+
+    .actions .btn {
+        flex-wrap: wrap;
+        column-gap: var(--space-1);
+        row-gap: 0;
+        padding: var(--space-1) var(--space-2);
+    }
+}
+
 .skip-cost {
     font-weight: 500;
     font-variant-numeric: tabular-nums;

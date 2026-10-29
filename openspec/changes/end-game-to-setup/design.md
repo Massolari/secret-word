@@ -107,6 +107,7 @@ A regra do vencedor é a mesma usada para o troféu em `viewScoreboard`. Um help
 - `.btn--danger` com `background: var(--danger)` e texto claro, seguindo o padrão de `.btn--success`. `--danger` já existe nos dois temas. Conferir o contraste do texto nos dois.
 - `.app__footer` já empilha os filhos em coluna com `gap: var(--space-2)`, então o botão Encerrar partida entra abaixo da ação principal sem CSS novo de layout.
 - Header da rodada: uma linha flex com o `.timer` ocupando o espaço restante (`flex: 1`) e o botão de ícone à direita, alinhado ao número do cronômetro. Conferir em 320 px que o tempo continua centralizado o bastante e que a barra de progresso não fica estreita demais.
+- Rodapé da rodada em telas de até 360 px: a linha Pular/Acertou já transbordava em 320 px antes desta change, porque a coluna `1fr` do Pular não encolhia abaixo do conteúdo (ícone, "Pular" e "−5s"). Nessa faixa, as colunas passam a `minmax(0, 1fr) minmax(0, 2fr)`, o padding dos botões diminui e o "−5s" quebra para uma segunda linha dentro do Pular, continuando visível. Acima de 360 px, a linha fica como estava.
 - Confirmação e placar final reaproveitam `.card`, `.section`, `.scoreboard`, `.over__title` e `.over__subtitle`. Só é preciso um estilo pequeno para o texto do cartão de confirmação.
 
 ## Risks / Trade-offs
