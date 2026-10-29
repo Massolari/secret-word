@@ -89,7 +89,7 @@ type WordResult
     | Missed
 
 
-init : ( Model, Cmd Msg )
+init : ( Model, Effect )
 init =
     ( { status = Preparing
       , players = Dict.empty
@@ -98,7 +98,7 @@ init =
       , tapGuard = { locked = False, token = 0 }
       , correctGuard = { locked = False, token = 0 }
       }
-    , Cmd.none
+    , NoEffect
     )
 
 
@@ -213,16 +213,71 @@ type GameMsg
 
 
 ------------
+-- Effect --
+------------
+
+
+{-| Efeitos que `update` pede, como dados. `perform` os converte em `Cmd`;
+nos testes, o `elm-program-test` os simula.
+-}
+type Effect
+    = NoEffect
+    | Batch (List Effect)
+    | Vibrate (List Int)
+    | KeepAwake Bool
+    | FocusPlayerName
+    | GetTime
+    | DrawWord (List Int)
+    | After Float Msg
+
+
+perform : Effect -> Cmd Msg
+perform effect =
+    case effect of
+        NoEffect ->
+            Cmd.none
+
+        Batch effects ->
+            Cmd.batch (List.map perform effects)
+
+        Vibrate pattern ->
+            vibrate pattern
+
+        KeepAwake keep ->
+            keepAwake keep
+
+        FocusPlayerName ->
+            Task.attempt (always NoOp) (Browser.Dom.focus playerNameInputId)
+
+        GetTime ->
+            Task.perform (GameMsg << Tick) Time.now
+
+        DrawWord pool ->
+            let
+                indexes =
+                    Array.fromList pool
+            in
+            Random.int 0 (Array.length indexes - 1)
+                |> Random.map (\position -> Array.get position indexes |> Maybe.withDefault -1)
+                |> Random.generate (GameMsg << NewWordIndex)
+
+        After millis msg ->
+            Process.sleep millis
+                |> Task.perform (\_ -> msg)
+
+
+
+------------
 -- Update --
 ------------
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> ( Model, Effect )
 update msg ({ preparingModel, gameModel } as model) =
     case msg of
         Start ->
             if model.status /= Preparing then
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
             else
                 let
@@ -269,12 +324,12 @@ update msg ({ preparingModel, gameModel } as model) =
                     , preparingModel = { preparingModel | removing = Set.empty }
                     , status = Playing
                   }
-                , Cmd.none
+                , NoEffect
                 )
                     |> lockTaps
 
         NoOp ->
-            ( model, Cmd.none )
+            ( model, NoEffect )
 
         PreparingMsg preparingMsg ->
             updatePreparing preparingMsg model
@@ -284,24 +339,24 @@ update msg ({ preparingModel, gameModel } as model) =
                 updateGame gameMsg model
 
             else
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
         ReleaseTaps token ->
             if token == model.tapGuard.token then
-                ( { model | tapGuard = { locked = False, token = token } }, Cmd.none )
+                ( { model | tapGuard = { locked = False, token = token } }, NoEffect )
 
             else
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
         ReleaseCorrect token ->
             if token == model.correctGuard.token then
-                ( { model | correctGuard = { locked = False, token = token } }, Cmd.none )
+                ( { model | correctGuard = { locked = False, token = token } }, NoEffect )
 
             else
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
 
-updatePreparing : PreparingMsg -> Model -> ( Model, Cmd Msg )
+updatePreparing : PreparingMsg -> Model -> ( Model, Effect )
 updatePreparing msg ({ preparingModel } as model) =
     case msg of
         SelectTime seconds ->
@@ -309,7 +364,7 @@ updatePreparing msg ({ preparingModel } as model) =
                 | preparingModel =
                     { preparingModel | roundSeconds = seconds }
               }
-            , Cmd.none
+            , NoEffect
             )
 
         InputPlayer playerName ->
@@ -317,7 +372,7 @@ updatePreparing msg ({ preparingModel } as model) =
                 | preparingModel =
                     { preparingModel | playerName = playerName }
               }
-            , Cmd.none
+            , NoEffect
             )
 
         DeletePlayer id ->
@@ -325,8 +380,7 @@ updatePreparing msg ({ preparingModel } as model) =
                 | preparingModel =
                     { preparingModel | removing = Set.insert id preparingModel.removing }
               }
-            , Process.sleep 200
-                |> Task.perform (\_ -> PreparingMsg (RemovePlayer id))
+            , After 200 (PreparingMsg (RemovePlayer id))
             )
 
         RemovePlayer id ->
@@ -335,7 +389,7 @@ updatePreparing msg ({ preparingModel } as model) =
                 , preparingModel =
                     { preparingModel | removing = Set.remove id preparingModel.removing }
               }
-            , Cmd.none
+            , NoEffect
             )
 
         AddUser ->
@@ -344,7 +398,7 @@ updatePreparing msg ({ preparingModel } as model) =
                     String.trim preparingModel.playerName
             in
             if String.isEmpty playerName || duplicatePlayer model /= Nothing then
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
             else
                 ( { model
@@ -355,7 +409,7 @@ updatePreparing msg ({ preparingModel } as model) =
                             , currentId = preparingModel.currentId + 1
                         }
                   }
-                , Task.attempt (always NoOp) (Browser.Dom.focus playerNameInputId)
+                , FocusPlayerName
                 )
 
 
@@ -399,7 +453,7 @@ acceptsGameMsg msg model =
             True
 
 
-updateGame : GameMsg -> Model -> ( Model, Cmd Msg )
+updateGame : GameMsg -> Model -> ( Model, Effect )
 updateGame msg ({ gameModel } as model) =
     case msg of
         Play ->
@@ -407,14 +461,14 @@ updateGame msg ({ gameModel } as model) =
                 | gameModel =
                     { gameModel | status = GamePlaying, lastTick = Nothing }
               }
-            , Cmd.batch [ newWordIndex gameModel, tickNow, keepAwake True ]
+            , Batch [ newWordIndex gameModel, GetTime, KeepAwake True ]
             )
                 |> lockTaps
 
         Tick now ->
             case ( gameModel.status, gameModel.lastTick ) of
                 ( GamePlaying, Nothing ) ->
-                    ( { model | gameModel = { gameModel | lastTick = Just now } }, Cmd.none )
+                    ( { model | gameModel = { gameModel | lastTick = Just now } }, NoEffect )
 
                 ( GamePlaying, Just previous ) ->
                     let
@@ -428,11 +482,11 @@ updateGame msg ({ gameModel } as model) =
                         advanceRound now elapsed model
 
                 _ ->
-                    ( model, Cmd.none )
+                    ( model, NoEffect )
 
         Resume ->
             ( { model | gameModel = { gameModel | status = GamePlaying, lastTick = Nothing } }
-            , Cmd.batch [ tickNow, keepAwake True ]
+            , Batch [ GetTime, KeepAwake True ]
             )
                 |> lockTaps
 
@@ -441,7 +495,7 @@ updateGame msg ({ gameModel } as model) =
                 pauseRound model
 
             else
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
         Restart ->
             let
@@ -481,7 +535,7 @@ updateGame msg ({ gameModel } as model) =
                     }
                 , players = playersUpdated
               }
-            , Cmd.none
+            , NoEffect
             )
                 |> lockTaps
 
@@ -494,7 +548,7 @@ updateGame msg ({ gameModel } as model) =
                             , history = ( gameModel.word, Guessed ) :: gameModel.history
                         }
                 }
-            , Cmd.batch [ newWordIndex gameModel, vibrate [ 30 ] ]
+            , Batch [ newWordIndex gameModel, Vibrate [ 30 ] ]
             )
 
         Jump ->
@@ -511,7 +565,7 @@ updateGame msg ({ gameModel } as model) =
                 )
 
             else
-                ( model, Cmd.none )
+                ( model, NoEffect )
 
         NewWordIndex index ->
             let
@@ -549,12 +603,12 @@ updateGame msg ({ gameModel } as model) =
                                     , drawCount = gameModel.drawCount + 1
                                 }
                           }
-                        , Cmd.none
+                        , NoEffect
                         )
                             |> lockCorrect
 
                     Nothing ->
-                        ( model, Cmd.none )
+                        ( model, NoEffect )
 
 
 {-| Intervalo entre ticks acima do qual a página foi congelada ou suspensa
@@ -565,12 +619,7 @@ interruptionMillis =
     2000
 
 
-tickNow : Cmd Msg
-tickNow =
-    Task.perform (GameMsg << Tick) Time.now
-
-
-advanceRound : Time.Posix -> Int -> Model -> ( Model, Cmd Msg )
+advanceRound : Time.Posix -> Int -> Model -> ( Model, Effect )
 advanceRound now elapsed ({ gameModel } as model) =
     let
         newTime =
@@ -606,17 +655,17 @@ advanceRound now elapsed ({ gameModel } as model) =
             }
     in
     if justEnded then
-        ( newModel, Cmd.batch [ vibrate [ 120, 80, 120, 80, 240 ], keepAwake False ] )
+        ( newModel, Batch [ Vibrate [ 120, 80, 120, 80, 240 ], KeepAwake False ] )
             |> lockTaps
 
     else
-        ( newModel, Cmd.none )
+        ( newModel, NoEffect )
 
 
-pauseRound : Model -> ( Model, Cmd Msg )
+pauseRound : Model -> ( Model, Effect )
 pauseRound ({ gameModel } as model) =
     ( { model | gameModel = { gameModel | status = GamePaused, lastTick = Nothing } }
-    , keepAwake False
+    , KeepAwake False
     )
         |> lockTaps
 
@@ -1129,17 +1178,16 @@ viewAvatar playerName =
 ------------
 
 
-lockTaps : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+lockTaps : ( Model, Effect ) -> ( Model, Effect )
 lockTaps ( { tapGuard } as model, cmd ) =
     let
         token =
             tapGuard.token + 1
     in
     ( { model | tapGuard = { locked = True, token = token } }
-    , Cmd.batch
+    , Batch
         [ cmd
-        , Process.sleep tapGuardMillis
-            |> Task.perform (\_ -> ReleaseTaps token)
+        , After tapGuardMillis (ReleaseTaps token)
         ]
     )
 
@@ -1149,17 +1197,16 @@ holdCorrect ({ correctGuard } as model) =
     { model | correctGuard = { locked = True, token = correctGuard.token + 1 } }
 
 
-lockCorrect : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+lockCorrect : ( Model, Effect ) -> ( Model, Effect )
 lockCorrect ( model, cmd ) =
     let
         ({ correctGuard } as heldModel) =
             holdCorrect model
     in
     ( heldModel
-    , Cmd.batch
+    , Batch
         [ cmd
-        , Process.sleep tapGuardMillis
-            |> Task.perform (\_ -> ReleaseCorrect correctGuard.token)
+        , After tapGuardMillis (ReleaseCorrect correctGuard.token)
         ]
     )
 
@@ -1259,16 +1306,9 @@ wordPool wordsCount drawn current =
         allIndexes
 
 
-newWordIndex : GameModel -> Cmd Msg
+newWordIndex : GameModel -> Effect
 newWordIndex gameModel =
-    let
-        pool =
-            wordPool (Array.length Words.words) gameModel.drawnIndex gameModel.currentIndex
-                |> Array.fromList
-    in
-    Random.int 0 (Array.length pool - 1)
-        |> Random.map (\position -> Array.get position pool |> Maybe.withDefault -1)
-        |> Random.generate (GameMsg << NewWordIndex)
+    DrawWord (wordPool (Array.length Words.words) gameModel.drawnIndex gameModel.currentIndex)
 
 
 
@@ -1299,8 +1339,8 @@ subscriptions ({ gameModel } as model) =
 main : Program () Model Msg
 main =
     Browser.element
-        { init = always init
+        { init = \_ -> Tuple.mapSecond perform init
         , view = view
-        , update = update
+        , update = \msg model -> update msg model |> Tuple.mapSecond perform
         , subscriptions = subscriptions
         }
