@@ -10,7 +10,7 @@ Três mecanismos que esta change precisa respeitar:
 - **Pontuação**: os pontos da rodada só entram em `model.players` dentro de `Restart`, junto com o avanço para a próxima dupla.
 - **Estado que vaza entre partidas**: `Start` usa `gameModel.currentPlayersIndex` e herda `drawnIndex`/`currentIndex` do `gameModel` existente. Hoje isso não importa porque só existe uma partida por carregamento de página.
 
-`subscriptions` só assina tick e visibilidade em `GamePlaying`, e o pedido de tela acesa já é liberado na pausa e no fim da rodada. Por isso, sair de `GamePlaying` para a confirmação já para o cronômetro sozinho. Basta zerar `lastTick` e liberar a tela acesa, como `pauseRound` faz, e religar os dois ao voltar, como `Resume` faz.
+`subscriptions` só assina tick e visibilidade em `GamePlaying`, e o pedido de tela acesa já é liberado na pausa e no fim da rodada. Por isso, encerrar a partir da rodada pode reaproveitar `pauseRound` por inteiro: a rodada vira `GamePaused` antes de a confirmação abrir, e o caminho de volta é a tela de pausa e o `Resume` que já existem.
 
 ## Goals / Non-Goals
 
@@ -65,13 +65,15 @@ As mensagens que não vêm de botões (`Tick`, `NewWordIndex`, `VisibilityChange
 
 Todas terminam em `lockTaps`, como as demais trocas de tela.
 
-- `AskEnd`: `status = GameConfirmingEnd gameModel.status`. Com origem `GamePlaying`, também grava `lastTick = Nothing` e envia `keepAwake False`. O tick para porque a assinatura sai junto com `GamePlaying`, e um `Tick` já em voo cai no ramo `_` de `Tick` e é ignorado. O tempo com a confirmação aberta não é descontado, porque o próximo tick depois de voltar começa com `lastTick = Nothing`.
-- `CancelEnd`: com `GameConfirmingEnd origin`, `status = origin`.
-  - Origem `GamePlaying`: faz o mesmo que `Resume` (`lastTick = Nothing`, `tickNow`, `keepAwake True`), sem sortear palavra. A rodada volta na hora com a mesma palavra, `score`, `history` e `currentTime`.
-  - Demais origens: não envia nada. A pausa continua pausada e só `Resume` religa a rodada.
+- `AskEnd`:
+  - Em `GamePlaying`, faz o mesmo que `pauseRound` (`status = GamePaused`, `lastTick = Nothing`, `keepAwake False`) e abre a confirmação com origem `GamePaused`, ou seja, `status = GameConfirmingEnd GamePaused`. Um helper `askEnd` pode receber o modelo já pausado. O tick para porque a assinatura sai junto com `GamePlaying`, e um `Tick` já em voo cai no ramo `_` de `Tick` e é ignorado. O tempo com a confirmação aberta não é descontado porque `Resume` recomeça com `lastTick = Nothing`.
+  - Nas demais telas, `status = GameConfirmingEnd gameModel.status`.
 
-  Uma alternativa era levar a volta da rodada para a tela de pausa, aproveitando `Resume` sem um caminho novo. Foi descartada a pedido: quem desistiu de encerrar quer voltar a jogar com um toque só.
-- `ConfirmEnd`: com origem `GameOver`, soma os pontos da rodada a `players` (Decisão 4). Com qualquer outra origem, inclusive `GamePlaying` e `GamePaused`, `players` fica igual. O `keepAwake` já foi liberado no `AskEnd` ou na pausa. Depois, `status = GameFinished`.
+  Com isso, `GameConfirmingEnd GamePlaying` nunca é construído.
+- `CancelEnd`: com `GameConfirmingEnd origin`, `status = origin`, sem enviar nada, para qualquer origem. Vinda da rodada, a volta cai na tela de pausa, e só `Resume` religa a rodada.
+
+  *Alternativa:* Voltar ao jogo retomar a rodada direto, com um ramo de `CancelEnd` que repetiria o `Resume` (tick e `keepAwake True`). Foi descartada para reaproveitar a pausa e o `Resume` que já existem, sem um requisito ou caminho novo. O custo é um toque a mais (Continuar rodada) para voltar a jogar, o que também dá ao grupo um momento para se preparar.
+- `ConfirmEnd`: com origem `GameOver`, soma os pontos da rodada a `players` (Decisão 4). Com qualquer outra origem, inclusive a rodada pausada pelo `AskEnd`, `players` fica igual. O `keepAwake` já foi liberado na pausa. Depois, `status = GameFinished`.
 - `NewGame`: `status = Preparing`, `gameModel = initGame`, cada jogador com `score = 0`. `preparingModel` fica como está, então `roundSeconds`, `currentId` (ids continuam únicos) e a ordem do `Dict` se mantêm.
 
 Zerar `gameModel` para `initGame` resolve de uma vez a ordem das duplas (`currentPlayersIndex = 0`), o sorteio (`drawnIndex = Set.empty`, `currentIndex = Nothing`) e o histórico. `Start` recalcula `playersOrder`, `time` e a dupla a partir disso.
@@ -87,8 +89,7 @@ A soma que hoje está dentro de `Restart` vira `addRoundPoints : GameModel -> Di
   - *Alternativa:* o mesmo botão ghost no rodapé, abaixo de `.actions`. Foi descartada porque fica colado nos botões mais tocados da partida e empurra Pular e Acertou para cima.
 - **Confirmação** (`key = "confirm-end"`): header com o `topbar` "Palavra Secreta". No main, um `.card` com o título "Encerrar a partida?" e um texto de apoio conforme a origem:
   - fim da rodada: "Os pontos desta rodada entram no placar final."
-  - rodada em andamento: "A rodada está parada e não vai contar pontos."
-  - pausa: "A rodada pausada não vai contar pontos."
+  - pausa, inclusive a aberta a partir da rodada: "A rodada pausada não vai contar pontos."
   - anúncio: "O placar atual será o placar final."
 
   No footer, **Encerrar** (`btn--danger btn--lg btn--block`) e **Voltar ao jogo** (`btn--secondary btn--lg btn--block`).
@@ -114,9 +115,8 @@ A regra do vencedor é a mesma usada para o troféu em `viewScoreboard`. Um help
 - [Rodapé mais alto em telas de 320 × 568] → O botão ghost tem 48 px e reduz a área do main nas três telas. O main já rola, e o placar e o histórico continuam acessíveis. Conferir no modo dispositivo do DevTools.
 - [Mensagens atrasadas depois de voltar à preparação] → Fora de `GamePlaying` não há tick nem sorteio pendente, e `ReleaseTaps`/`ReleaseCorrect` só destravam pelo token. Não há nada em voo que possa trazer estado da partida antiga.
 - [A confirmação perde a ação principal da origem] → É intencional: a tela de confirmação só tem Encerrar e Voltar ao jogo. Na pausa, isso também impede de retomar a rodada sem querer.
-- [Sorteio em voo ao abrir a confirmação na rodada] → Se o jogador toca em Acertou ou Pular e logo depois no ícone de encerrar, o `NewWordIndex` pedido pode chegar com a confirmação aberta e trocar a palavra (ele não passa por `acceptsGameMsg`). Ao voltar, aparece essa palavra nova, que já conta como sorteada, e não a anterior, que já entrou no histórico. É o mesmo efeito de o sorteio chegar durante a rodada, então não há palavra perdida nem pontuação errada.
-- [Toque em Voltar ao jogo seguido de Acertou] → A volta à rodada passa por `lockTaps`, então um toque logo depois de Voltar ao jogo não conta como acerto.
-- [`GameConfirmingEnd GameStatus` permite aninhar confirmações em tese] → `AskEnd` só é aceito nas quatro telas de origem, então `GameConfirmingEnd (GameConfirmingEnd _)` nunca é construído.
+- [Sorteio em voo ao abrir a confirmação na rodada] → Se o jogador toca em Acertou ou Pular e logo depois no ícone de encerrar, o `NewWordIndex` pedido pode chegar com a confirmação aberta e trocar a palavra (ele não passa por `acceptsGameMsg`). Depois de Continuar rodada, aparece essa palavra nova, que já conta como sorteada, e não a anterior, que já entrou no histórico. É o mesmo que já acontece hoje quando a pausa por troca de aba chega com um sorteio em voo, então não há palavra perdida nem pontuação errada.
+- [`GameConfirmingEnd GameStatus` permite aninhar confirmações em tese] → `AskEnd` só é aceito nas quatro telas de origem, e da rodada a origem gravada é `GamePaused`. Assim, `GameConfirmingEnd (GameConfirmingEnd _)` e `GameConfirmingEnd GamePlaying` nunca são construídos.
 
 ## Open Questions
 
