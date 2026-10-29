@@ -162,6 +162,11 @@ playerNameInputId =
     "player-name"
 
 
+playerNameErrorId : String
+playerNameErrorId =
+    "player-name-error"
+
+
 
 -----------
 -- Ports --
@@ -344,7 +349,7 @@ updatePreparing msg ({ preparingModel } as model) =
                 playerName =
                     String.trim preparingModel.playerName
             in
-            if String.isEmpty playerName then
+            if String.isEmpty playerName || duplicatePlayer model /= Nothing then
                 ( model, Cmd.none )
 
             else
@@ -799,34 +804,59 @@ viewPreparePlayers ({ preparingModel } as model) =
     let
         players =
             Dict.toList model.players
+
+        duplicate =
+            duplicatePlayer model
+
+        invalidAttributes =
+            case duplicate of
+                Just _ ->
+                    [ attribute "aria-invalid" "true"
+                    , attribute "aria-describedby" playerNameErrorId
+                    ]
+
+                Nothing ->
+                    []
     in
     section [ class "section" ]
         [ h2 [ class "section__title" ]
             [ text "Jogadores"
             , span [ class "section__count" ] [ text <| String.fromInt (Dict.size (activePlayers model)) ]
             ]
-        , form [ class "add-player", onSubmit (PreparingMsg AddUser), novalidate True ]
-            [ input
-                [ id playerNameInputId
-                , class "field"
-                , type_ "text"
-                , placeholder "Nome do jogador"
-                , attribute "aria-label" "Nome do jogador"
-                , attribute "enterkeyhint" "done"
-                , attribute "autocapitalize" "words"
-                , autocomplete False
-                , maxlength 24
-                , value preparingModel.playerName
-                , onInput (PreparingMsg << InputPlayer)
+        , div [ class "add-player-group" ]
+            [ form [ class "add-player", onSubmit (PreparingMsg AddUser), novalidate True ]
+                [ input
+                    ([ id playerNameInputId
+                     , class "field"
+                     , type_ "text"
+                     , placeholder "Nome do jogador"
+                     , attribute "aria-label" "Nome do jogador"
+                     , attribute "enterkeyhint" "done"
+                     , attribute "autocapitalize" "words"
+                     , autocomplete False
+                     , maxlength 24
+                     , value preparingModel.playerName
+                     , onInput (PreparingMsg << InputPlayer)
+                     ]
+                        ++ invalidAttributes
+                    )
+                    []
+                , button
+                    [ type_ "submit"
+                    , class "btn btn--primary btn--icon"
+                    , attribute "aria-label" "Adicionar jogador"
+                    , disabled (String.isEmpty (String.trim preparingModel.playerName) || duplicate /= Nothing)
+                    ]
+                    [ Icons.plus ]
                 ]
-                []
-            , button
-                [ type_ "submit"
-                , class "btn btn--primary btn--icon"
-                , attribute "aria-label" "Adicionar jogador"
-                , disabled (String.isEmpty (String.trim preparingModel.playerName))
-                ]
-                [ Icons.plus ]
+            , p [ id playerNameErrorId, class "field-error", attribute "aria-live" "polite" ]
+                (case duplicate of
+                    Just player ->
+                        [ text ("Já tem um jogador chamado " ++ player.name ++ ".") ]
+
+                    Nothing ->
+                        []
+                )
             ]
         , if List.isEmpty players then
             p [ class "empty" ]
@@ -1361,6 +1391,27 @@ avatarHue id =
 progressStyle : Float -> Html.Attribute msg
 progressStyle progress =
     attribute "style" ("--progress: " ++ String.fromFloat progress)
+
+
+normalizeName : String -> String
+normalizeName =
+    String.words >> String.join " " >> String.toLower
+
+
+duplicatePlayer : Model -> Maybe Player
+duplicatePlayer model =
+    let
+        name =
+            normalizeName model.preparingModel.playerName
+    in
+    if String.isEmpty name then
+        Nothing
+
+    else
+        activePlayers model
+            |> Dict.values
+            |> List.filter (\player -> normalizeName player.name == name)
+            |> List.head
 
 
 newPlayer : String -> Player
