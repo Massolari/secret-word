@@ -7,7 +7,7 @@ import Browser.Events
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, fieldset, form, h1, h2, input, label, legend, li, ol, p, section, span, text, ul)
 import Html.Attributes exposing (attribute, autocomplete, checked, class, classList, disabled, id, maxlength, name, novalidate, placeholder, type_, value)
-import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
+import Html.Events exposing (onCheck, onClick, onInput, preventDefaultOn)
 import Html.Keyed as Keyed
 import Icons
 import Json.Decode as Decode
@@ -40,6 +40,7 @@ type alias PreparingModel =
     { roundSeconds : Int
     , currentId : Int
     , playerName : String
+    , staleName : Maybe String
     , removing : Set Int
     }
 
@@ -112,6 +113,7 @@ initPreparing =
     { roundSeconds = 60
     , currentId = 0
     , playerName = ""
+    , staleName = Nothing
     , removing = Set.empty
     }
 
@@ -219,7 +221,8 @@ type PreparingMsg
     | InputPlayer String
     | DeletePlayer Int
     | RemovePlayer Int
-    | AddUser
+    | AddUser String
+    | FieldRendered
 
 
 type GameMsg
@@ -371,7 +374,7 @@ updatePreparing msg ({ preparingModel } as model) =
         InputPlayer playerName ->
             ( { model
                 | preparingModel =
-                    { preparingModel | playerName = playerName }
+                    { preparingModel | playerName = withoutStaleName preparingModel.staleName playerName }
               }
             , Cmd.none
             )
@@ -394,7 +397,7 @@ updatePreparing msg ({ preparingModel } as model) =
             , Cmd.none
             )
 
-        AddUser ->
+        AddUser fieldValue ->
             let
                 playerName =
                     String.trim preparingModel.playerName
@@ -408,11 +411,34 @@ updatePreparing msg ({ preparingModel } as model) =
                     , preparingModel =
                         { preparingModel
                             | playerName = ""
+                            , staleName = Just fieldValue
                             , currentId = preparingModel.currentId + 1
                         }
                   }
                 , Task.attempt (always NoOp) (Browser.Dom.focus playerNameInputId)
                 )
+
+        FieldRendered ->
+            ( { model | preparingModel = { preparingModel | staleName = Nothing } }
+            , Cmd.none
+            )
+
+
+{-| O campo só é limpo no DOM no próximo frame. Uma tecla digitada antes disso
+chega com o nome recém-adicionado ainda no campo, e esse prefixo é descartado.
+-}
+withoutStaleName : Maybe String -> String -> String
+withoutStaleName staleName playerName =
+    case staleName of
+        Just stale ->
+            if String.startsWith stale playerName then
+                String.dropLeft (String.length stale) playerName
+
+            else
+                playerName
+
+        Nothing ->
+            playerName
 
 
 acceptsGameMsg : GameMsg -> Model -> Bool
@@ -836,6 +862,18 @@ onEscape msg =
             )
 
 
+{-| Envia o texto que está no campo no DOM, que pode ainda não ter sido
+redesenhado com o valor do modelo.
+-}
+onAddUser : Html.Attribute Msg
+onAddUser =
+    preventDefaultOn "submit"
+        (Decode.at [ "target", "elements", playerNameInputId, "value" ] Decode.string
+            |> Decode.maybe
+            |> Decode.map (\fieldValue -> ( PreparingMsg (AddUser (Maybe.withDefault "" fieldValue)), True ))
+        )
+
+
 viewPreparing : Model -> Screen
 viewPreparing model =
     let
@@ -926,7 +964,7 @@ viewPreparePlayers ({ preparingModel } as model) =
             , span [ class "section__count" ] [ text <| String.fromInt (Dict.size (activePlayers model)) ]
             ]
         , div [ class "add-player-group" ]
-            [ form [ class "add-player", onSubmit (PreparingMsg AddUser), novalidate True ]
+            [ form [ class "add-player", onAddUser, novalidate True ]
                 [ input
                     ([ id playerNameInputId
                      , class "field"
@@ -1620,8 +1658,18 @@ subscriptions ({ gameModel } as model) =
 
             else
                 []
+
+        -- O frame do render é pedido antes deste, então quando este dispara o
+        -- campo no DOM já mostra o valor do modelo, sem o nome antigo
+        staleNameSubs =
+            case model.preparingModel.staleName of
+                Just _ ->
+                    [ Browser.Events.onAnimationFrame (\_ -> PreparingMsg FieldRendered) ]
+
+                Nothing ->
+                    []
     in
-    Sub.batch (sessionSubs ++ exitPromptSubs ++ roundSubs)
+    Sub.batch (sessionSubs ++ exitPromptSubs ++ roundSubs ++ staleNameSubs)
 
 
 
