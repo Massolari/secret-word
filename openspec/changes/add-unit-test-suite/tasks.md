@@ -8,7 +8,7 @@
 ## 2. Refatoração para `Effect`
 
 - [x] 2.1 Em `src/Main.elm`, criar `type Effect` e `perform : Effect -> Cmd Msg` (Decisão 1). Mudar `init`, `update`, `updatePreparing`, `updateGame`, `advanceRound`, `pauseRound`, `lockTaps`, `lockCorrect`, `tickNow` (vira `GetTime`) e `newWordIndex` (vira `DrawWord (wordPool …)`) para devolver `Effect`, mantendo a mesma ordem dos `Batch` de hoje. Ajustar `main` para aplicar `perform`. Verificar que `npx elm make src/Main.elm --output=/dev/null` compila e que `git diff` não toca em `view*`, `Model`, `Msg` nem `subscriptions`.
-- [ ] 2.2 Rodar `yarn start` e verificar no navegador que o comportamento não mudou: adicionar e remover jogadores (remoção animada), começar a partida, toque duplo em Começar rodada ignorado, Acertou vibrando e trocando a palavra, Pular tirando 5 s, aba oculta pausando a rodada, Continuar rodada, fim do tempo e Continuar somando o placar.
+- [x] 2.2 Rodar `yarn start` e verificar no navegador que o comportamento não mudou: adicionar e remover jogadores (remoção animada), começar a partida, toque duplo em Começar rodada ignorado, Acertou vibrando e trocando a palavra, Pular tirando 5 s, aba oculta pausando a rodada, Continuar rodada, fim do tempo e Continuar somando o placar.
 
 ## 3. Harness de testes
 
@@ -48,7 +48,7 @@
 ## 9. Verificação integrada
 
 - [x] 9.1 Remover `tests/SmokeTest.elm` se já estiver coberto, rodar `yarn test` do zero (`rm -rf elm-stuff` antes) e conferir que todos os testes passam. Comparar a saída com os specs: cada cenário de `game-setup`, `game-round` e `word-list` tem um teste com o mesmo nome ou aparece na lista de manuais de um comentário de módulo.
-- [ ] 9.2 Confirmar que `yarn build` continua gerando o app e que, no navegador, uma partida completa com 3 jogadores funciona como antes da refatoração.
+- [x] 9.2 Confirmar que `yarn build` continua gerando o app e que, no navegador, uma partida completa com 3 jogadores funciona como antes da refatoração.
 
 ## Workflow follow-up
 
