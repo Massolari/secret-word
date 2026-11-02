@@ -26,6 +26,15 @@ O jogador SHALL poder adicionar um participante digitando o nome e confirmando p
 - **THEN** "Ana" aparece no fim da lista de jogadores
 - **AND** o campo fica vazio e continua focado para o próximo nome
 
+#### Scenario: Digitar o próximo nome logo depois de confirmar
+- **WHEN** o jogador digita "Ana", confirma pelo teclado e digita "Beto" antes de o campo ser redesenhado
+- **THEN** o campo fica só com o texto novo, sem "Ana" no começo
+- **AND** confirmar adiciona "Beto", não "AnaBeto"
+
+#### Scenario: Nome que começa com o anterior, depois do redesenho
+- **WHEN** a lista tem "Ana", o campo já foi redesenhado e o jogador digita "Anabela"
+- **THEN** o campo mantém "Anabela" inteiro
+
 #### Scenario: Nome vazio
 - **WHEN** o campo está vazio ou só tem espaços
 - **THEN** o botão de adicionar fica desabilitado

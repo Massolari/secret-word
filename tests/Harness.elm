@@ -4,6 +4,7 @@ module Harness exposing
     , addPlayers
     , correct
     , continue
+    , fieldRendered
     , fromModel
     , playingModel
     , simulate
@@ -13,6 +14,7 @@ module Harness exposing
     , startGame
     , startRound
     , startWith
+    , submitField
     , submitPlayer
     , tick
     , ticks
@@ -152,6 +154,30 @@ typeName =
 submitPlayer : Session -> Session
 submitPlayer =
     ProgramTest.simulateDomEvent (Query.find [ Selector.tag "form" ]) Event.submit
+
+
+{-| Envia o formulário com `fieldText` no campo do DOM, que pode estar
+atrasado em relação ao modelo até o próximo redesenho.
+-}
+submitField : String -> Session -> Session
+submitField fieldText =
+    let
+        field =
+            Encode.object [ ( "value", Encode.string fieldText ) ]
+
+        target =
+            Encode.object [ ( "elements", Encode.object [ ( playerNameInputId, field ) ] ) ]
+    in
+    ProgramTest.simulateDomEvent (Query.find [ Selector.tag "form" ])
+        (Event.custom "submit" (Encode.object [ ( "target", target ) ]))
+
+
+{-| O campo foi redesenhado. A assinatura de `onAnimationFrame` não dá para
+simular, então os testes mandam a mensagem à mão.
+-}
+fieldRendered : Session -> Session
+fieldRendered =
+    ProgramTest.update (PreparingMsg FieldRendered)
 
 
 addPlayer : String -> Session -> Session

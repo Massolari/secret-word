@@ -483,7 +483,7 @@ updatePreparing msg ({ preparingModel } as model) =
 
         FieldRendered ->
             ( { model | preparingModel = { preparingModel | staleName = Nothing } }
-            , Cmd.none
+            , NoEffect
             )
 
 

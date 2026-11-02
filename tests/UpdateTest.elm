@@ -21,6 +21,7 @@ suite : Test
 suite =
     describe "update"
         [ effectTests
+        , staleNameTests
         , guardTokenTests
         , clockTests
         , visibilityTests
@@ -164,7 +165,7 @@ effectTests =
                     preparing =
                         model.preparingModel
                 in
-                update (PreparingMsg AddUser) { model | preparingModel = { preparing | playerName = "Ana" } }
+                update (PreparingMsg (AddUser "Ana")) { model | preparingModel = { preparing | playerName = "Ana" } }
                     |> Tuple.second
                     |> Expect.equal FocusPlayerName
         , test "DeletePlayer remove depois de 200 ms" <|
@@ -177,6 +178,75 @@ effectTests =
                 update (GameMsg (Tick (Time.millisToPosix 1000))) playingModel
                     |> Tuple.second
                     |> Expect.equal NoEffect
+        ]
+
+
+typingName : String -> List String -> Model
+typingName text names =
+    let
+        model =
+            Tuple.first init |> withPlayers names
+
+        preparing =
+            model.preparingModel
+    in
+    { model | preparingModel = { preparing | playerName = text } }
+
+
+afterAdding : String -> Model
+afterAdding fieldValue =
+    update (PreparingMsg (AddUser fieldValue)) (typingName "Ana" [])
+        |> Tuple.first
+
+
+staleNameTests : Test
+staleNameTests =
+    describe "texto antigo no campo depois de adicionar"
+        [ test "AddUser aceito guarda o texto que está no DOM" <|
+            \_ ->
+                (afterAdding "AnaBeto").preparingModel.staleName
+                    |> Expect.equal (Just "AnaBeto")
+        , test "AddUser com nome vazio não guarda nada" <|
+            \_ ->
+                update (PreparingMsg (AddUser "   ")) (typingName "   " [])
+                    |> Tuple.first
+                    |> (.preparingModel >> .staleName)
+                    |> Expect.equal Nothing
+        , test "AddUser com nome repetido não guarda nada" <|
+            \_ ->
+                update (PreparingMsg (AddUser "ana")) (typingName "ana" [ "Ana" ])
+                    |> Tuple.first
+                    |> (.preparingModel >> .staleName)
+                    |> Expect.equal Nothing
+        , test "InputPlayer descarta o texto antigo" <|
+            \_ ->
+                update (PreparingMsg (InputPlayer "AnaB")) (afterAdding "Ana")
+                    |> Tuple.first
+                    |> (.preparingModel >> .playerName)
+                    |> Expect.equal "B"
+        , test "InputPlayer mantém o texto antigo guardado até o redesenho" <|
+            \_ ->
+                update (PreparingMsg (InputPlayer "AnaB")) (afterAdding "Ana")
+                    |> Tuple.first
+                    |> update (PreparingMsg (InputPlayer "AnaBe"))
+                    |> Tuple.first
+                    |> (.preparingModel >> .playerName)
+                    |> Expect.equal "Be"
+        , test "FieldRendered esquece o texto antigo" <|
+            \_ ->
+                update (PreparingMsg FieldRendered) (afterAdding "Ana")
+                    |> Expect.all
+                        [ Tuple.first >> .preparingModel >> .staleName >> Expect.equal Nothing
+                        , Tuple.second >> Expect.equal NoEffect
+                        ]
+        , test "depois de FieldRendered, InputPlayer não corta nada" <|
+            \_ ->
+                update (PreparingMsg FieldRendered) (afterAdding "Ana")
+                    |> Tuple.first
+                    |> update (PreparingMsg (InputPlayer "Anabela"))
+                    |> Tuple.first
+                    |> (.preparingModel >> .playerName)
+                    |> Expect.equal "Anabela"
         ]
 
 

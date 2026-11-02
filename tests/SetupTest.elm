@@ -6,6 +6,9 @@ Ficam manuais, porque o `elm-test` não roda o navegador:
 
   - "Adicionar pelo teclado": o foco real no campo depois de adicionar. Aqui
     só se confere que `AddUser` pede o efeito `FocusPlayerName`.
+  - "Digitar o próximo nome logo depois de confirmar": o atraso real do
+    redesenho e a assinatura de `onAnimationFrame`. Aqui o texto atrasado do
+    campo e o `FieldRendered` são mandados à mão.
   - "Leitor de tela" (nos dois requisitos): o anúncio feito pelo leitor de
     tela. Aqui se conferem os atributos que ele lê.
 
@@ -99,9 +102,57 @@ addTests =
         , test "Adicionar pelo teclado: pede foco no campo" <|
             \_ ->
                 typed "Ana"
-                    |> update (PreparingMsg AddUser)
+                    |> update (PreparingMsg (AddUser "Ana"))
                     |> Tuple.second
                     |> Expect.equal FocusPlayerName
+        , test "Digitar o próximo nome logo depois de confirmar" <|
+            \_ ->
+                start
+                    |> typeName "Ana"
+                    |> submitField "Ana"
+                    |> typeName "AnaB"
+                    |> ProgramTest.ensureView (expectField "B")
+                    |> typeName "AnaBeto"
+                    |> submitField "AnaBeto"
+                    |> typeName "AnaBetoCaio"
+                    |> submitField "AnaBetoCaio"
+                    |> ProgramTest.ensureView (expectField "")
+                    |> ProgramTest.expectModel
+                        (.players >> Dict.values >> List.map .name >> Expect.equal [ "Ana", "Beto", "Caio" ])
+        , test "Digitar o próximo nome logo depois de confirmar: campo redesenhado entre os envios" <|
+            \_ ->
+                start
+                    |> typeName "Ana"
+                    |> submitField "Ana"
+                    |> typeName "AnaB"
+                    |> typeName "Beto"
+                    |> submitField "Beto"
+                    |> typeName "BetoC"
+                    |> ProgramTest.ensureView (expectField "C")
+                    |> submitField "BetoC"
+                    |> ProgramTest.expectModel
+                        (.players >> Dict.values >> List.map .name >> Expect.equal [ "Ana", "Beto", "C" ])
+        , test "Nome que começa com o anterior, depois do redesenho" <|
+            \_ ->
+                start
+                    |> typeName "Ana"
+                    |> submitField "Ana"
+                    |> fieldRendered
+                    |> typeName "Anabela"
+                    |> ProgramTest.ensureView (expectField "Anabela")
+                    |> submitField "Anabela"
+                    |> ProgramTest.expectModel
+                        (.players >> Dict.values >> List.map .name >> Expect.equal [ "Ana", "Anabela" ])
+        , test "Nome recusado continua inteiro no campo" <|
+            \_ ->
+                start
+                    |> typeName "Ana"
+                    |> submitField "Ana"
+                    |> fieldRendered
+                    |> typeName "ana"
+                    |> submitField "ana"
+                    |> typeName "ana m"
+                    |> ProgramTest.expectView (expectField "ana m")
         , test "Nome vazio: botão desabilitado" <|
             \_ ->
                 start
@@ -114,6 +165,12 @@ addTests =
                     |> submitPlayer
                     |> ProgramTest.expectModel (.players >> Dict.isEmpty >> Expect.equal True)
         ]
+
+
+expectField : String -> Query.Single msg -> Expect.Expectation
+expectField fieldText =
+    Query.find [ id playerNameInputId ]
+        >> Query.has [ attribute (Attr.value fieldText) ]
 
 
 typed : String -> Model
