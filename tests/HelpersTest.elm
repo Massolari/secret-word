@@ -6,7 +6,7 @@ import Fuzz
 import Harness exposing (playingModel, withPlayers, withRemaining)
 import Main exposing (..)
 import Set
-import Test exposing (Test, describe, fuzz, test)
+import Test exposing (Test, describe, fuzz, fuzz2, test)
 import Time
 
 
@@ -15,6 +15,7 @@ suite =
     describe "Funções auxiliares"
         [ timeTests
         , nameTests
+        , staleNameTests
         , wordPoolTests
         , skipTests
         , currentPlayersTests
@@ -102,6 +103,26 @@ nameTests =
                 in
                 duplicatePlayer { model | preparingModel = { preparing | removing = Set.singleton 0 } }
                     |> Expect.equal Nothing
+        ]
+
+
+staleNameTests : Test
+staleNameTests =
+    describe "withoutStaleName"
+        [ test "descarta o nome que ficou no começo do texto" <|
+            \_ -> withoutStaleName (Just "Ana") "AnaB" |> Expect.equal "B"
+        , test "só o nome antigo vira texto vazio" <|
+            \_ -> withoutStaleName (Just "Ana") "Ana" |> Expect.equal ""
+        , test "só descarta no começo do texto" <|
+            \_ -> withoutStaleName (Just "Ana") "Mariana" |> Expect.equal "Mariana"
+        , test "diferencia maiúsculas, como o texto do campo" <|
+            \_ -> withoutStaleName (Just "Ana") "anaB" |> Expect.equal "anaB"
+        , test "campo já redesenhado fica como está" <|
+            \_ -> withoutStaleName (Just "Ana") "A" |> Expect.equal "A"
+        , fuzz Fuzz.string "sem texto antigo, nada muda" <|
+            \text -> withoutStaleName Nothing text |> Expect.equal text
+        , fuzz2 Fuzz.string Fuzz.string "devolve o que veio depois do texto antigo" <|
+            \stale typed -> withoutStaleName (Just stale) (stale ++ typed) |> Expect.equal typed
         ]
 
 
