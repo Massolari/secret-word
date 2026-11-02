@@ -10,6 +10,7 @@ import Html.Attributes exposing (attribute, autocomplete, checked, class, classL
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Html.Keyed as Keyed
 import Icons
+import Json.Decode as Decode
 import Process
 import Random
 import Set exposing (Set)
@@ -31,6 +32,7 @@ type alias Model =
     , gameModel : GameModel
     , tapGuard : TapGuard
     , correctGuard : TapGuard
+    , exitPrompt : Bool
     }
 
 
@@ -82,6 +84,8 @@ type GameStatus
     | GamePlaying
     | GamePaused
     | GameOver
+    | GameConfirmingEnd GameStatus -- tela de onde a confirmação foi aberta
+    | GameFinished
 
 
 type WordResult
@@ -97,6 +101,7 @@ init =
       , gameModel = initGame
       , tapGuard = { locked = False, token = 0 }
       , correctGuard = { locked = False, token = 0 }
+      , exitPrompt = False
       }
     , NoEffect
     )
@@ -165,6 +170,11 @@ playerNameErrorId =
     "player-name-error"
 
 
+exitPromptStayId : String
+exitPromptStayId =
+    "exit-prompt-stay"
+
+
 
 -----------
 -- Ports --
@@ -175,6 +185,15 @@ port vibrate : List Int -> Cmd msg
 
 
 port keepAwake : Bool -> Cmd msg
+
+
+port protectGame : Bool -> Cmd msg
+
+
+port leaveGame : () -> Cmd msg
+
+
+port backPressed : (() -> msg) -> Sub msg
 
 
 
@@ -190,6 +209,9 @@ type Msg
     | GameMsg GameMsg
     | ReleaseTaps Int
     | ReleaseCorrect Int
+    | BackPressed
+    | StayInGame
+    | LeaveGame
 
 
 type PreparingMsg
@@ -209,6 +231,10 @@ type GameMsg
     | NewWordIndex Int
     | Resume
     | VisibilityChanged Browser.Events.Visibility
+    | AskEnd
+    | CancelEnd
+    | ConfirmEnd
+    | NewGame
 
 
 
@@ -225,7 +251,10 @@ type Effect
     | Batch (List Effect)
     | Vibrate (List Int)
     | KeepAwake Bool
+    | ProtectGame Bool
+    | LeavePage
     | FocusPlayerName
+    | FocusExitPrompt
     | GetTime
     | DrawWord (List Int)
     | After Float Msg
@@ -246,8 +275,17 @@ perform effect =
         KeepAwake keep ->
             keepAwake keep
 
+        ProtectGame protect ->
+            protectGame protect
+
+        LeavePage ->
+            leaveGame ()
+
         FocusPlayerName ->
             Task.attempt (always NoOp) (Browser.Dom.focus playerNameInputId)
+
+        FocusExitPrompt ->
+            Task.attempt (always NoOp) (Browser.Dom.focus exitPromptStayId)
 
         GetTime ->
             Task.perform (GameMsg << Tick) Time.now
@@ -276,7 +314,7 @@ update : Msg -> Model -> ( Model, Effect )
 update msg ({ preparingModel, gameModel } as model) =
     case msg of
         Start ->
-            if model.status /= Preparing then
+            if model.status /= Preparing || model.tapGuard.locked then
                 ( model, NoEffect )
 
             else
@@ -324,7 +362,7 @@ update msg ({ preparingModel, gameModel } as model) =
                     , preparingModel = { preparingModel | removing = Set.empty }
                     , status = Playing
                   }
-                , NoEffect
+                , ProtectGame True
                 )
                     |> lockTaps
 
@@ -354,6 +392,33 @@ update msg ({ preparingModel, gameModel } as model) =
 
             else
                 ( model, NoEffect )
+
+        BackPressed ->
+            if model.status /= Playing then
+                ( model, NoEffect )
+
+            else if model.exitPrompt then
+                update StayInGame model
+
+            else
+                let
+                    ( pausedModel, pauseEffect ) =
+                        if gameModel.status == GamePlaying then
+                            pauseRound model
+
+                        else
+                            ( model, NoEffect )
+                in
+                ( { pausedModel | exitPrompt = True }
+                , Batch [ pauseEffect, FocusExitPrompt ]
+                )
+
+        StayInGame ->
+            ( { model | exitPrompt = False }, NoEffect )
+                |> lockTaps
+
+        LeaveGame ->
+            ( model, LeavePage )
 
 
 updatePreparing : PreparingMsg -> Model -> ( Model, Effect )
@@ -419,19 +484,31 @@ acceptsGameMsg msg model =
         screen =
             case msg of
                 Play ->
-                    Just GameShowingPlayers
+                    Just ((==) GameShowingPlayers)
 
                 Correct ->
-                    Just GamePlaying
+                    Just ((==) GamePlaying)
 
                 Jump ->
-                    Just GamePlaying
+                    Just ((==) GamePlaying)
 
                 Restart ->
-                    Just GameOver
+                    Just ((==) GameOver)
 
                 Resume ->
-                    Just GamePaused
+                    Just ((==) GamePaused)
+
+                AskEnd ->
+                    Just (\status -> List.member status [ GameShowingPlayers, GamePlaying, GamePaused, GameOver ])
+
+                CancelEnd ->
+                    Just isConfirmingEnd
+
+                ConfirmEnd ->
+                    Just isConfirmingEnd
+
+                NewGame ->
+                    Just ((==) GameFinished)
 
                 Tick _ ->
                     Nothing
@@ -443,14 +520,25 @@ acceptsGameMsg msg model =
                     Nothing
     in
     case screen of
-        Just status ->
+        Just onScreen ->
             not model.tapGuard.locked
+                && not model.exitPrompt
                 && not (msg == Correct && model.correctGuard.locked)
                 && model.status == Playing
-                && model.gameModel.status == status
+                && onScreen model.gameModel.status
 
         Nothing ->
             True
+
+
+isConfirmingEnd : GameStatus -> Bool
+isConfirmingEnd status =
+    case status of
+        GameConfirmingEnd _ ->
+            True
+
+        _ ->
+            False
 
 
 updateGame : GameMsg -> Model -> ( Model, Effect )
@@ -499,19 +587,6 @@ updateGame msg ({ gameModel } as model) =
 
         Restart ->
             let
-                playersUpdated =
-                    Dict.update
-                        (Tuple.first gameModel.questioner)
-                        (Maybe.map
-                            (\player -> { player | score = player.score + (gameModel.score // 2) })
-                        )
-                        model.players
-                        |> Dict.update
-                            (Tuple.first gameModel.guesser)
-                            (Maybe.map
-                                (\player -> { player | score = player.score + gameModel.score })
-                            )
-
                 newCurrentIndex =
                     if gameModel.currentPlayersIndex >= (Array.length gameModel.playersOrder - 1) then
                         0
@@ -533,7 +608,53 @@ updateGame msg ({ gameModel } as model) =
                         , status = GameShowingPlayers
                         , history = []
                     }
-                , players = playersUpdated
+                , players = addRoundPoints gameModel model.players
+              }
+            , NoEffect
+            )
+                |> lockTaps
+
+        AskEnd ->
+            case gameModel.status of
+                GamePlaying ->
+                    let
+                        ( paused, effect ) =
+                            pauseRound model
+                    in
+                    ( askEnd paused, effect )
+
+                _ ->
+                    ( askEnd model, NoEffect )
+                        |> lockTaps
+
+        CancelEnd ->
+            case gameModel.status of
+                GameConfirmingEnd origin ->
+                    ( { model | gameModel = { gameModel | status = origin } }, NoEffect )
+                        |> lockTaps
+
+                _ ->
+                    ( model, NoEffect )
+
+        ConfirmEnd ->
+            ( { model
+                | gameModel = { gameModel | status = GameFinished }
+                , players =
+                    if gameModel.status == GameConfirmingEnd GameOver then
+                        addRoundPoints gameModel model.players
+
+                    else
+                        model.players
+              }
+            , NoEffect
+            )
+                |> lockTaps
+
+        NewGame ->
+            ( { model
+                | status = Preparing
+                , gameModel = initGame
+                , players = Dict.map (\_ player -> { player | score = 0 }) model.players
               }
             , NoEffect
             )
@@ -670,6 +791,25 @@ pauseRound ({ gameModel } as model) =
         |> lockTaps
 
 
+askEnd : Model -> Model
+askEnd ({ gameModel } as model) =
+    { model | gameModel = { gameModel | status = GameConfirmingEnd gameModel.status } }
+
+
+{-| Soma os pontos da rodada: quem adivinha ganha os acertos e quem dá as
+dicas ganha a metade, arredondada para baixo.
+-}
+addRoundPoints : GameModel -> Dict Int Player -> Dict Int Player
+addRoundPoints gameModel players =
+    players
+        |> Dict.update
+            (Tuple.first gameModel.questioner)
+            (Maybe.map (\player -> { player | score = player.score + (gameModel.score // 2) }))
+        |> Dict.update
+            (Tuple.first gameModel.guesser)
+            (Maybe.map (\player -> { player | score = player.score + gameModel.score }))
+
+
 
 ----------
 -- View --
@@ -697,10 +837,61 @@ view model =
     in
     Keyed.node "div"
         [ class "app" ]
-        [ ( screen.key ++ "-header", Html.header [ class "app__header" ] [ screen.header ] )
-        , ( screen.key ++ "-main", Html.main_ [ class "app__main" ] screen.main )
-        , ( screen.key ++ "-footer", Html.footer [ class "app__footer" ] screen.footer )
+        ([ ( screen.key ++ "-header", Html.header [ class "app__header" ] [ screen.header ] )
+         , ( screen.key ++ "-main", Html.main_ [ class "app__main" ] screen.main )
+         , ( screen.key ++ "-footer", Html.footer [ class "app__footer" ] screen.footer )
+         ]
+            ++ (if model.exitPrompt then
+                    [ ( "exit-prompt", viewExitPrompt ) ]
+
+                else
+                    []
+               )
+        )
+
+
+viewExitPrompt : Html Msg
+viewExitPrompt =
+    div [ class "dialog-backdrop" ]
+        [ div
+            [ class "card dialog"
+            , attribute "role" "dialog"
+            , attribute "aria-modal" "true"
+            , attribute "aria-labelledby" "exit-prompt-title"
+            , attribute "aria-describedby" "exit-prompt-text"
+            ]
+            [ h2 [ id "exit-prompt-title", class "dialog__title" ] [ text "Sair da partida?" ]
+            , p [ id "exit-prompt-text", class "dialog__text" ] [ text "O placar e a vez de cada dupla serão perdidos." ]
+            , div [ class "dialog__actions" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn--ghost btn--block"
+                    , onClick LeaveGame
+                    ]
+                    [ text "Sair" ]
+                , button
+                    [ type_ "button"
+                    , id exitPromptStayId
+                    , class "btn btn--primary btn--lg btn--block"
+                    , onClick StayInGame
+                    ]
+                    [ text "Continuar partida" ]
+                ]
+            ]
         ]
+
+
+onEscape : Msg -> Decode.Decoder Msg
+onEscape msg =
+    Decode.field "key" Decode.string
+        |> Decode.andThen
+            (\key ->
+                if key == "Escape" then
+                    Decode.succeed msg
+
+                else
+                    Decode.fail "not escape"
+            )
 
 
 viewPreparing : Model -> Screen
@@ -879,6 +1070,12 @@ viewGame ({ gameModel } as model) =
         GameOver ->
             viewGameOver model
 
+        GameConfirmingEnd origin ->
+            viewConfirmEnd origin
+
+        GameFinished ->
+            viewFinished model
+
 
 viewGameShowingPlayers : Model -> Screen
 viewGameShowingPlayers ({ gameModel } as model) =
@@ -912,6 +1109,7 @@ viewGameShowingPlayers ({ gameModel } as model) =
             , onClick (GameMsg Play)
             ]
             [ text "Começar rodada", Icons.play ]
+        , viewEndButton
         ]
     }
 
@@ -919,7 +1117,17 @@ viewGameShowingPlayers ({ gameModel } as model) =
 viewPlaying : Model -> Screen
 viewPlaying { gameModel } =
     { key = "round"
-    , header = viewTimer gameModel
+    , header =
+        div [ class "round-bar" ]
+            [ viewTimer gameModel
+            , button
+                [ type_ "button"
+                , class "btn btn--ghost btn--icon"
+                , attribute "aria-label" "Encerrar partida"
+                , onClick (GameMsg AskEnd)
+                ]
+                [ Icons.close ]
+            ]
     , main =
         [ div [ class "round" ]
             [ p [ class "round__pair" ]
@@ -986,6 +1194,7 @@ viewPaused { gameModel } =
             , onClick (GameMsg Resume)
             ]
             [ text "Continuar rodada", Icons.play ]
+        , viewEndButton
         ]
     }
 
@@ -1062,6 +1271,88 @@ viewGameOver ({ gameModel } as model) =
             , onClick (GameMsg Restart)
             ]
             [ text "Continuar" ]
+        , viewEndButton
+        ]
+    }
+
+
+viewEndButton : Html Msg
+viewEndButton =
+    button
+        [ type_ "button"
+        , class "btn btn--ghost btn--block"
+        , onClick (GameMsg AskEnd)
+        ]
+        [ text "Encerrar partida" ]
+
+
+viewConfirmEnd : GameStatus -> Screen
+viewConfirmEnd origin =
+    { key = "confirm-end"
+    , header =
+        div [ class "topbar" ]
+            [ span [ class "topbar__title" ] [ text "Palavra Secreta" ] ]
+    , main =
+        [ div [ class "card confirm" ]
+            [ h2 [ class "confirm__title" ] [ text "Encerrar a partida?" ]
+            , p [ class "confirm__text" ]
+                [ text <|
+                    case origin of
+                        GameOver ->
+                            "Os pontos desta rodada entram no placar final."
+
+                        GamePaused ->
+                            "A rodada pausada não vai contar pontos."
+
+                        _ ->
+                            "O placar atual será o placar final."
+                ]
+            ]
+        ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--danger btn--lg btn--block"
+            , onClick (GameMsg ConfirmEnd)
+            ]
+            [ text "Encerrar" ]
+        , button
+            [ type_ "button"
+            , class "btn btn--secondary btn--lg btn--block"
+            , onClick (GameMsg CancelEnd)
+            ]
+            [ text "Voltar ao jogo" ]
+        ]
+    }
+
+
+viewFinished : Model -> Screen
+viewFinished model =
+    { key = "final"
+    , header =
+        div []
+            [ h1 [ class "over__title" ] [ text "Fim de jogo" ]
+            , p [ class "over__subtitle" ]
+                [ text <|
+                    case List.map .name (leaders model.players) of
+                        [] ->
+                            "Ninguém pontuou"
+
+                        [ winner ] ->
+                            winner ++ " venceu!"
+
+                        names ->
+                            "Empate entre " ++ joinNames names
+                ]
+            ]
+    , main = [ viewScoreboard model ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick (GameMsg NewGame)
+            ]
+            [ text "Nova partida" ]
         ]
     }
 
@@ -1122,10 +1413,8 @@ viewScoreboard model =
         scores =
             List.map (Tuple.second >> .score) players
 
-        topScore =
-            scores
-                |> List.maximum
-                |> Maybe.withDefault 0
+        leaderIds =
+            List.map Tuple.first (leaderEntries model.players)
     in
     section [ class "section" ]
         [ h2 [ class "section__title" ] [ text "Placar" ]
@@ -1134,7 +1423,7 @@ viewScoreboard model =
                 (\( id, player ) ->
                     let
                         leader =
-                            topScore > 0 && player.score == topScore
+                            List.member id leaderIds
 
                         position =
                             1 + List.length (List.filter (\score -> score > player.score) scores)
@@ -1209,6 +1498,42 @@ lockCorrect ( model, cmd ) =
         , After tapGuardMillis (ReleaseCorrect correctGuard.token)
         ]
     )
+
+
+{-| Jogadores com a maior pontuação, quando ela é maior que zero, na ordem
+do placar.
+-}
+leaderEntries : Dict Int Player -> List ( Int, Player )
+leaderEntries players =
+    let
+        topScore =
+            Dict.values players
+                |> List.map .score
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    Dict.toList players
+        |> List.filter (\( _, player ) -> topScore > 0 && player.score == topScore)
+
+
+leaders : Dict Int Player -> List Player
+leaders =
+    leaderEntries >> List.map Tuple.second
+
+
+{-| Junta nomes com vírgulas e "e" antes do último: "Ana, Beto e Caio".
+-}
+joinNames : List String -> String
+joinNames names =
+    case List.reverse names of
+        [] ->
+            ""
+
+        last :: [] ->
+            last
+
+        last :: rest ->
+            String.join ", " (List.reverse rest) ++ " e " ++ last
 
 
 activePlayers : Model -> Dict Int Player
@@ -1319,15 +1644,33 @@ newWordIndex gameModel =
 
 subscriptions : Model -> Sub Msg
 subscriptions ({ gameModel } as model) =
-    case gameModel.status of
-        GamePlaying ->
-            Sub.batch
-                [ Time.every 200 (GameMsg << Tick)
-                , Browser.Events.onVisibilityChange (GameMsg << VisibilityChanged)
-                ]
+    let
+        roundSubs =
+            case gameModel.status of
+                GamePlaying ->
+                    [ Time.every 200 (GameMsg << Tick)
+                    , Browser.Events.onVisibilityChange (GameMsg << VisibilityChanged)
+                    ]
 
-        _ ->
-            Sub.none
+                _ ->
+                    []
+
+        sessionSubs =
+            case model.status of
+                Playing ->
+                    [ backPressed (\_ -> BackPressed) ]
+
+                Preparing ->
+                    []
+
+        exitPromptSubs =
+            if model.exitPrompt then
+                [ Browser.Events.onKeyDown (onEscape StayInGame) ]
+
+            else
+                []
+    in
+    Sub.batch (sessionSubs ++ exitPromptSubs ++ roundSubs)
 
 
 

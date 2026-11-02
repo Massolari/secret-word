@@ -77,7 +77,16 @@ simulateWith pick effect =
         KeepAwake keep ->
             SimulatedEffect.Ports.send "keepAwake" (Encode.bool keep)
 
+        ProtectGame protect ->
+            SimulatedEffect.Ports.send "protectGame" (Encode.bool protect)
+
+        LeavePage ->
+            SimulatedEffect.Ports.send "leaveGame" Encode.null
+
         FocusPlayerName ->
+            SimulatedEffect.Cmd.none
+
+        FocusExitPrompt ->
             SimulatedEffect.Cmd.none
 
         GetTime ->

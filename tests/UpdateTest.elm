@@ -106,11 +106,11 @@ releaseTaps token =
 effectTests : Test
 effectTests =
     describe "efeito de cada mensagem"
-        [ test "Start trava os toques" <|
+        [ test "Start protege a partida e trava os toques" <|
             \_ ->
                 update Start (preparingWith [ "Ana", "Beto" ])
                     |> Tuple.second
-                    |> Expect.equal (Batch [ NoEffect, releaseTaps 1 ])
+                    |> Expect.equal (Batch [ ProtectGame True, releaseTaps 1 ])
         , test "Start fora da preparação não faz nada" <|
             \_ ->
                 update Start playingModel
