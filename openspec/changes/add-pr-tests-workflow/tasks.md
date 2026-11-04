@@ -2,7 +2,7 @@
 
 ## 1. Workflow
 
-- [ ] 1.1 Criar `.github/workflows/tests.yml` com o conteúdo definido em `design.md`. Verificar com `actionlint`, se estiver disponível, que o arquivo é válido; a validação definitiva é a tarefa 2.1. Verificar com `git status` que nenhum outro arquivo fora de `.github/` e da change mudou.
+- [x] 1.1 Criar `.github/workflows/tests.yml` com o conteúdo definido em `design.md`. Verificar com `actionlint`, se estiver disponível, que o arquivo é válido; a validação definitiva é a tarefa 2.1. Verificar com `git status` que nenhum outro arquivo fora de `.github/` e da change mudou.
 
 ## 2. Verificação em um PR real
 
