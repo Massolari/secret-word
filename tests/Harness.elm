@@ -85,6 +85,12 @@ simulateWith pick effect =
         LeavePage ->
             SimulatedEffect.Ports.send "leaveGame" Encode.null
 
+        InstructionsEntry open ->
+            SimulatedEffect.Ports.send "instructionsEntry" (Encode.bool open)
+
+        ScrollToTop ->
+            SimulatedEffect.Cmd.none
+
         FocusPlayerName ->
             SimulatedEffect.Cmd.none
 
