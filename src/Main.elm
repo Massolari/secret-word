@@ -1283,16 +1283,16 @@ viewSkipButton enabled cost =
         seconds =
             secondsLeft (Time.millisToPosix cost)
 
-        ( label, costView ) =
+        label =
             case seconds of
                 0 ->
-                    ( "Pular (sem custo)", [] )
+                    "Pular (sem custo)"
 
                 1 ->
-                    ( "Pular (perde 1 segundo)", [ viewSkipCost seconds ] )
+                    "Pular (perde 1 segundo)"
 
                 _ ->
-                    ( "Pular (perde " ++ String.fromInt seconds ++ " segundos)", [ viewSkipCost seconds ] )
+                    "Pular (perde " ++ String.fromInt seconds ++ " segundos)"
     in
     button
         [ type_ "button"
@@ -1301,12 +1301,14 @@ viewSkipButton enabled cost =
         , attribute "aria-label" label
         , onClick (GameMsg Jump)
         ]
-        (Icons.skip :: text "Pular" :: costView)
+        [ Icons.skip
+        , text "Pular"
 
-
-viewSkipCost : Int -> Html Msg
-viewSkipCost seconds =
-    span [ class "skip-cost" ] [ text ("−" ++ String.fromInt seconds ++ "s") ]
+        -- Sem custo, o texto só fica invisível: os botões não podem mudar de largura
+        , span
+            [ classList [ ( "skip-cost", True ), ( "skip-cost--hidden", seconds == 0 ) ] ]
+            [ text ("−" ++ String.fromInt seconds ++ "s") ]
+        ]
 
 
 viewGameOver : Model -> Screen

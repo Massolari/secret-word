@@ -64,6 +64,12 @@ skipCost gameModel =
 
 Com o botão desabilitado, o custo continua caindo como nos outros casos. Não vale criar um estado especial, porque o botão apagado já mostra que não dá para pular.
 
+Sem custo, `span.skip-cost` continua no botão, com `visibility: hidden` (`.skip-cost--hidden`). As colunas `1fr 2fr` de `.actions` crescem com o conteúdo acima de 360 px, e tirar o `span` fazia os botões mudarem de largura a cada palavra: medido em 375 px, Pular ia de 158 para 121 px, e a divisa entre os botões andava 37 px sob o polegar.
+
+- O preço é o texto "Pular" ficar um pouco fora do centro quando não há custo.
+- Alternativa descartada: mostrar "−0s". Não mexe no CSS, mas muda o spec e fica estranho de ler.
+- Alternativa descartada: colunas fixas com quebra de linha em todos os celulares, como já acontece até 360 px. Muda o visual em todos os celulares e estreita o Pular.
+
 ### 5. Testes
 
 Os testes que usam `remaining N` ficam com a mesma palavra desde o início da rodada, então pulariam de graça. Eles passam a chegar ao tempo desejado e tocar em Acertou antes (novo helper), para terem uma palavra recém-sorteada.

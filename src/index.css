@@ -849,6 +849,10 @@ input {
     color: var(--text-muted);
 }
 
+.skip-cost--hidden {
+    visibility: hidden;
+}
+
 .actions .btn--secondary:disabled {
     opacity: 0.75;
 }

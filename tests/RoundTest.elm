@@ -338,7 +338,7 @@ skipTests =
                     |> newWordAt 40
                     |> ticks 21000 27000
                     |> expectTimer "00:33"
-                    |> ProgramTest.ensureView (Query.find skipButton >> Query.hasNot [ class "skip-cost" ])
+                    |> ProgramTest.ensureView (Query.find skipButton >> Query.has [ class "skip-cost--hidden" ])
                     |> skip
                     |> expectTimer "00:33"
                     |> expectWord "Abacaxi"
@@ -369,6 +369,7 @@ skipTests =
                     |> expectSkipCost "−5s" "Pular (perde 5 segundos)"
                     |> ticks 1000 4000
                     |> expectSkipCost "−1s" "Pular (perde 1 segundo)"
+                    |> ProgramTest.ensureView (Query.find skipButton >> Query.hasNot [ class "skip-cost--hidden" ])
                     |> done
         , test "Sem custo para o leitor de tela" <|
             \_ ->
