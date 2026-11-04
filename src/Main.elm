@@ -77,6 +77,7 @@ type alias Player =
 
 type Status
     = Preparing
+    | Instructions
     | Playing
 
 
@@ -195,6 +196,9 @@ port protectGame : Bool -> Cmd msg
 port leaveGame : () -> Cmd msg
 
 
+port instructionsEntry : Bool -> Cmd msg
+
+
 port backPressed : (() -> msg) -> Sub msg
 
 
@@ -214,6 +218,8 @@ type Msg
     | BackPressed
     | StayInGame
     | LeaveGame
+    | OpenInstructions
+    | CloseInstructions
 
 
 type PreparingMsg
@@ -256,6 +262,8 @@ type Effect
     | KeepAwake Bool
     | ProtectGame Bool
     | LeavePage
+    | InstructionsEntry Bool
+    | ScrollToTop
     | FocusPlayerName
     | FocusExitPrompt
     | GetTime
@@ -283,6 +291,12 @@ perform effect =
 
         LeavePage ->
             leaveGame ()
+
+        InstructionsEntry open ->
+            instructionsEntry open
+
+        ScrollToTop ->
+            Task.perform (always NoOp) (Browser.Dom.setViewport 0 0)
 
         FocusPlayerName ->
             Task.attempt (always NoOp) (Browser.Dom.focus playerNameInputId)
@@ -397,7 +411,12 @@ update msg ({ preparingModel, gameModel } as model) =
                 ( model, NoEffect )
 
         BackPressed ->
-            if model.status /= Playing then
+            if model.status == Instructions then
+                -- O navegador já tirou a entrada do histórico, então vale mesmo com os toques travados
+                ( { model | status = Preparing }, ScrollToTop )
+                    |> lockTaps
+
+            else if model.status /= Playing then
                 ( model, NoEffect )
 
             else if model.exitPrompt then
@@ -422,6 +441,26 @@ update msg ({ preparingModel, gameModel } as model) =
 
         LeaveGame ->
             ( model, LeavePage )
+
+        OpenInstructions ->
+            if model.status /= Preparing || model.tapGuard.locked then
+                ( model, NoEffect )
+
+            else
+                ( { model | status = Instructions }
+                , Batch [ InstructionsEntry True, ScrollToTop ]
+                )
+                    |> lockTaps
+
+        CloseInstructions ->
+            if model.status /= Instructions || model.tapGuard.locked then
+                ( model, NoEffect )
+
+            else
+                ( { model | status = Preparing }
+                , Batch [ InstructionsEntry False, ScrollToTop ]
+                )
+                    |> lockTaps
 
 
 updatePreparing : PreparingMsg -> Model -> ( Model, Effect )
@@ -858,6 +897,9 @@ view model =
                 Preparing ->
                     viewPreparing model
 
+                Instructions ->
+                    viewInstructions
+
                 Playing ->
                     viewGame model
     in
@@ -946,6 +988,12 @@ viewPreparing model =
         div [ class "brand" ]
             [ h1 [ class "brand__title" ] [ text "Palavra Secreta" ]
             , p [ class "brand__tagline" ] [ text "Dê dicas, adivinhe, pontue." ]
+            , button
+                [ type_ "button"
+                , class "btn btn--secondary brand__help"
+                , onClick OpenInstructions
+                ]
+                [ Icons.help, text "Como jogar" ]
             ]
     , main =
         [ viewPrepareTime model
@@ -1091,6 +1139,52 @@ viewPlayer removing ( id, player ) =
             [ Icons.trash ]
         ]
     )
+
+
+viewInstructions : Screen
+viewInstructions =
+    { key = "instructions"
+    , header =
+        div [ class "brand" ]
+            [ h1 [ class "brand__title" ] [ text "Como jogar" ] ]
+    , main =
+        List.map viewInstructionsSection
+            [ ( "O jogo"
+              , "Em duplas, um jogador dá dicas e o outro tenta adivinhar a palavra antes que o tempo acabe. Vocês jogam passando um único celular."
+              )
+            , ( "Preparação"
+              , "Cadastrem pelo menos 2 jogadores e escolham o tempo da rodada."
+              )
+            , ( "Duplas"
+              , "A cada rodada, o jogo mostra quem dá as dicas e quem adivinha. Cada jogador dá dicas para cada um dos outros, e a ordem recomeça depois da última dupla. Passem o celular para quem vai dar as dicas."
+              )
+            , ( "Rodada"
+              , "Só quem dá as dicas olha a tela. Toque em Acertou para contar 1 acerto e trocar a palavra. Toque em Pular para trocar a palavra, mas isso custa 5 segundos do tempo restante."
+              )
+            , ( "Pontos"
+              , "Quem adivinha ganha 1 ponto por acerto. Quem dá as dicas ganha metade, arredondada para baixo: com 5 acertos, são 5 e 2 pontos."
+              )
+            , ( "Fim da partida"
+              , "Joguem quantas rodadas quiserem. Quando quiserem parar, toquem em Encerrar partida. Vence quem tiver mais pontos."
+              )
+            ]
+    , footer =
+        [ button
+            [ type_ "button"
+            , class "btn btn--primary btn--lg btn--block"
+            , onClick CloseInstructions
+            ]
+            [ text "Voltar" ]
+        ]
+    }
+
+
+viewInstructionsSection : ( String, String ) -> Html Msg
+viewInstructionsSection ( title, body ) =
+    section [ class "section" ]
+        [ h2 [ class "section__title" ] [ text title ]
+        , p [ class "instructions__text" ] [ text body ]
+        ]
 
 
 viewGame : Model -> Screen
@@ -1696,6 +1790,9 @@ subscriptions ({ gameModel } as model) =
         sessionSubs =
             case model.status of
                 Playing ->
+                    [ backPressed (\_ -> BackPressed) ]
+
+                Instructions ->
                     [ backPressed (\_ -> BackPressed) ]
 
                 Preparing ->

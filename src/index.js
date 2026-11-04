@@ -82,8 +82,33 @@ app.ports?.leaveGame?.subscribe(() => {
     history.go(-2)
 })
 
+let instructionsOpen = false
+
+// Depois de recarregar nas instruções, esta entrada não abre mais nada
+if (history.state?.secretWordInstructions) history.replaceState(null, "")
+
+app.ports?.instructionsEntry?.subscribe((open) => {
+    if (open) {
+        instructionsOpen = true
+        history.pushState({ secretWordInstructions: true }, "")
+    } else {
+        if (!instructionsOpen) return
+        instructionsOpen = false
+        history.back()
+    }
+})
+
 window.addEventListener("popstate", () => {
-    if (!guarded) return
+    if (instructionsOpen) {
+        instructionsOpen = false
+        app.ports?.backPressed?.send(null)
+        return
+    }
+    if (!guarded) {
+        // Avançar para uma entrada de instruções já fechadas
+        if (history.state?.secretWordInstructions) history.back()
+        return
+    }
     pushGuard()
     app.ports?.backPressed?.send(null)
 })
