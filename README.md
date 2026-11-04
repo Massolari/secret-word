@@ -60,6 +60,7 @@ O comportamento do jogo é especificado em [`openspec/specs/`](openspec/specs/),
 | Spec | Cobre |
 | --- | --- |
 | `game-setup` | Cadastro de jogadores e escolha do tempo |
+| `game-instructions` | Tela de instruções e como voltar dela |
 | `game-round` | Duplas, rodada, cronômetro, pontuação, placar, pausa |
 | `ui-theme` | Tema, layout mobile-first, toque, animações |
 | `word-list` | Critérios da lista de palavras |

@@ -1,4 +1,4 @@
-module Icons exposing (arrowDown, check, clock, close, play, plus, skip, trash, trophy, users)
+module Icons exposing (arrowDown, check, clock, close, help, play, plus, skip, trash, trophy, users)
 
 import Html exposing (Html)
 import Html.Attributes exposing (attribute)
@@ -57,6 +57,14 @@ clock =
     icon
         [ circle [ cx "12", cy "12", r "9" ] []
         , path [ d "M12 7v5l3 2" ] []
+        ]
+
+
+help : Html msg
+help =
+    icon
+        [ circle [ cx "12", cy "12", r "9" ] []
+        , path [ d "M9.5 9a2.5 2.5 0 1 1 4 2c-1 .75-1.5 1.25-1.5 2.5M12 17h.01" ] []
         ]
 
 

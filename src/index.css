@@ -338,6 +338,14 @@ input {
     color: var(--text-muted);
 }
 
+.brand__help {
+    margin-top: var(--space-3);
+}
+
+.instructions__text {
+    color: var(--text);
+}
+
 .topbar {
     display: flex;
     align-items: center;
