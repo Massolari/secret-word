@@ -28,7 +28,7 @@ A tela de instruções SHALL explicar o objetivo do jogo e, nesta ordem: a prepa
 #### Scenario: Rodada
 - **WHEN** a tela de instruções está aberta
 - **THEN** o texto diz que Acertou conta 1 acerto e troca a palavra
-- **AND** diz que Pular troca a palavra e custa 5 segundos do tempo restante
+- **AND** diz que Pular troca a palavra e custa até 5 segundos do tempo restante, com o custo caindo enquanto a palavra está na tela
 
 #### Scenario: Pontuação e fim da partida
 - **WHEN** a tela de instruções está aberta

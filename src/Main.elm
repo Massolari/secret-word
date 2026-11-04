@@ -1172,7 +1172,7 @@ viewInstructions =
               , "A cada rodada, o jogo mostra quem dá as dicas e quem adivinha. Cada jogador dá dicas para cada um dos outros, e a ordem recomeça depois da última dupla. Passem o celular para quem vai dar as dicas."
               )
             , ( "Rodada"
-              , "Só quem dá as dicas olha a tela. Toque em Acertou para contar 1 acerto e trocar a palavra. Toque em Pular para trocar a palavra, mas isso custa 5 segundos do tempo restante."
+              , "Só quem dá as dicas olha a tela. Toque em Acertou para contar 1 acerto e trocar a palavra. Toque em Pular para trocar a palavra. Pular custa até 5 segundos do tempo restante: o custo cai 1 segundo a cada segundo com a palavra na tela, até zerar."
               )
             , ( "Pontos"
               , "Quem adivinha ganha 1 ponto por acerto. Quem dá as dicas ganha metade, arredondada para baixo: com 5 acertos, são 5 e 2 pontos."

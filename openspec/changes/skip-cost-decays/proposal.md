@@ -29,5 +29,6 @@ _Nenhuma._
 - `src/Main.elm`: `GameModel` ganha o tempo restante no momento em que a palavra apareceu. `skipCost` e `canSkip` passam a depender dele, e `Jump` e `viewSkipButton` usam o custo atual.
 - `tests/`: os testes de Pular chegam ao tempo desejado com a mesma palavra na tela, então passariam a pular de graça e precisam ser reescritos. Os helpers `skip` e `skipButton` hoje dependem do texto fixo "Pular (perde 5 segundos)".
 - `README.md`: a regra do Pular muda.
+- Tela de instruções (`viewInstructions` e `tests/InstructionsTest.elm`): o texto da regra do Pular muda. A change `add-instructions-screen`, ainda não arquivada, recebe o mesmo texto no spec e no design, para o spec `game-instructions` não nascer com a regra antiga.
 - `src/index.css`: uma regra para esconder o custo sem liberar o espaço dele. Acima de 360 px, as colunas de `.actions` crescem com o conteúdo, e os botões mudariam de largura quando o custo some. `.skip-cost` já usa algarismos de largura fixa.
 - Sem novas dependências.

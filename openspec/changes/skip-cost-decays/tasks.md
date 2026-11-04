@@ -15,6 +15,7 @@
 ## 3. Documentação
 
 - [x] 3.1 Atualizar a regra do Pular em `README.md` (linha 13): o custo começa em 5 segundos e cai 1 por segundo enquanto a palavra está na tela. Verificar relendo o trecho.
+- [x] 3.2 Atualizar a regra do Pular na tela de instruções (`viewInstructions`), em `tests/InstructionsTest.elm` e no spec e design de `add-instructions-screen`. Verificar com `yarn test` e com `grep -rn "custa 5" src tests`, que não deve encontrar nada.
 
 ## 4. Verificação integrada
 
