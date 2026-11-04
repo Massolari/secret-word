@@ -60,6 +60,7 @@ type alias GameModel =
     , drawCount : Int
     , history : List ( String, WordResult )
     , lastTick : Maybe Time.Posix
+    , wordStartTime : Time.Posix
     }
 
 
@@ -134,17 +135,28 @@ initGame =
     , drawCount = 0
     , history = []
     , lastTick = Nothing
+    , wordStartTime = Time.millisToPosix 0
     }
 
 
-skipCost : Int
-skipCost =
+maxSkipCost : Int
+maxSkipCost =
     5000
 
 
+{-| Custo atual de pular: cai na mesma medida do tempo da palavra na tela.
+-}
+skipCost : GameModel -> Int
+skipCost gameModel =
+    max 0 (maxSkipCost - (Time.posixToMillis gameModel.wordStartTime - Time.posixToMillis gameModel.currentTime))
+
+
+{-| Uma palavra que apareceu com pouco tempo não pode ser pulada: a rodada
+acabaria antes de o custo zerar, e o pulo terminaria a rodada.
+-}
 canSkip : GameModel -> Bool
 canSkip gameModel =
-    Time.posixToMillis gameModel.currentTime > skipCost
+    Time.posixToMillis gameModel.wordStartTime > maxSkipCost
 
 
 roundPresets : List ( Int, String )
@@ -704,7 +716,7 @@ updateGame msg ({ gameModel } as model) =
                     { model
                         | gameModel =
                             { gameModel
-                                | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost)
+                                | currentTime = Time.millisToPosix (Time.posixToMillis gameModel.currentTime - skipCost gameModel)
                                 , history = ( gameModel.word, Missed ) :: gameModel.history
                             }
                     }
@@ -748,6 +760,7 @@ updateGame msg ({ gameModel } as model) =
                                         else
                                             Set.insert index gameModel.drawnIndex
                                     , drawCount = gameModel.drawCount + 1
+                                    , wordStartTime = gameModel.currentTime
                                 }
                           }
                         , NoEffect
@@ -1198,7 +1211,7 @@ viewPlaying { gameModel } =
         ]
     , footer =
         [ div [ class "actions" ]
-            [ viewSkipButton (canSkip gameModel)
+            [ viewSkipButton (canSkip gameModel) (skipCost gameModel)
             , button
                 [ type_ "button"
                 , class "btn btn--success btn--lg"
@@ -1264,19 +1277,36 @@ viewTimer gameModel =
         ]
 
 
-viewSkipButton : Bool -> Html Msg
-viewSkipButton enabled =
+viewSkipButton : Bool -> Int -> Html Msg
+viewSkipButton enabled cost =
+    let
+        seconds =
+            secondsLeft (Time.millisToPosix cost)
+
+        ( label, costView ) =
+            case seconds of
+                0 ->
+                    ( "Pular (sem custo)", [] )
+
+                1 ->
+                    ( "Pular (perde 1 segundo)", [ viewSkipCost seconds ] )
+
+                _ ->
+                    ( "Pular (perde " ++ String.fromInt seconds ++ " segundos)", [ viewSkipCost seconds ] )
+    in
     button
         [ type_ "button"
         , class "btn btn--secondary btn--lg"
         , disabled (not enabled)
-        , attribute "aria-label" "Pular (perde 5 segundos)"
+        , attribute "aria-label" label
         , onClick (GameMsg Jump)
         ]
-        [ Icons.skip
-        , text "Pular"
-        , span [ class "skip-cost" ] [ text "−5s" ]
-        ]
+        (Icons.skip :: text "Pular" :: costView)
+
+
+viewSkipCost : Int -> Html Msg
+viewSkipCost seconds =
+    span [ class "skip-cost" ] [ text ("−" ++ String.fromInt seconds ++ "s") ]
 
 
 viewGameOver : Model -> Screen

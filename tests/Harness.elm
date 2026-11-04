@@ -214,7 +214,7 @@ correct =
 
 skip : Session -> Session
 skip =
-    ProgramTest.clickButton "Pular (perde 5 segundos)"
+    ProgramTest.clickButton "Pular"
 
 
 continue : Session -> Session
@@ -295,6 +295,7 @@ playingModel =
                 , drawnIndex = Set.singleton 0
                 , drawCount = 1
                 , lastTick = Just (Time.millisToPosix 0)
+                , wordStartTime = Time.millisToPosix 60000
             }
     }
 

@@ -353,6 +353,29 @@ clockTests =
                         [ .gameModel >> .status >> Expect.equal GamePlaying
                         , remainingMillis >> Expect.equal 25000
                         ]
+        , test "Pausa não reduz o custo" <|
+            \_ ->
+                let
+                    paused =
+                        playingModel
+                            |> tickAt 1000
+                            |> tickAt 2000
+                            |> step (GameMsg (VisibilityChanged Hidden))
+
+                    resumed =
+                        paused
+                            |> step (ReleaseTaps paused.tapGuard.token)
+                            |> step (GameMsg Resume)
+                            |> tickAt 999999
+                in
+                Expect.all
+                    [ \m -> skipCost m.gameModel |> Expect.equal 3000
+                    , step (ReleaseTaps resumed.tapGuard.token)
+                        >> step (GameMsg Jump)
+                        >> remainingMillis
+                        >> Expect.equal 55000
+                    ]
+                    resumed
         , test "o fim do tempo marca a palavra na tela como erro" <|
             \_ ->
                 playingModel
