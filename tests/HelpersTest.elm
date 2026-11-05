@@ -158,12 +158,38 @@ wordPoolTests =
 
 skipTests : Test
 skipTests =
-    describe "canSkip"
-        [ test "com 5001 ms pode pular" <|
-            \_ -> canSkip (withRemaining 5001 playingModel).gameModel |> Expect.equal True
-        , test "com 5000 ms não pode" <|
-            \_ -> canSkip (withRemaining 5000 playingModel).gameModel |> Expect.equal False
+    describe "canSkip e skipCost"
+        [ test "palavra que apareceu com 5001 ms pode ser pulada" <|
+            \_ -> canSkip (wordShown 5001 5001) |> Expect.equal True
+        , test "palavra que apareceu com 5000 ms não pode" <|
+            \_ -> canSkip (wordShown 5000 5000) |> Expect.equal False
+        , test "canSkip não depende do tempo restante" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> canSkip (wordShown 20000 3000) |> Expect.equal True
+                    , \_ -> canSkip (wordShown 5000 100) |> Expect.equal False
+                    ]
+                    ()
+        , test "custo com a palavra recém-aparecida" <|
+            \_ -> skipCost (wordShown 40000 40000) |> Expect.equal 5000
+        , test "custo depois de 2400 ms" <|
+            \_ -> skipCost (wordShown 40000 37600) |> Expect.equal 2600
+        , test "custo zera depois de 5000 ms" <|
+            \_ -> skipCost (wordShown 40000 35000) |> Expect.equal 0
+        , test "custo não fica negativo depois de 7000 ms" <|
+            \_ -> skipCost (wordShown 40000 33000) |> Expect.equal 0
         ]
+
+
+{-| Palavra que apareceu com `start` ms restantes, quando restam `left` ms.
+-}
+wordShown : Int -> Int -> GameModel
+wordShown start left =
+    let
+        game =
+            (withRemaining left playingModel).gameModel
+    in
+    { game | wordStartTime = Time.millisToPosix start }
 
 
 currentPlayersTests : Test

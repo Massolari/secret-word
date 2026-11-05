@@ -10,7 +10,7 @@ Feito em [Elm](https://elm-lang.org/), empacotado com [Parcel](https://parceljs.
 2. **Anúncio da dupla** — o jogo mostra quem dá as dicas e quem adivinha. As duplas seguem a ordem de cadastro: cada jogador dá dicas para cada um dos outros e, ao fim, a ordem recomeça. Com Ana, Beto e Caio: Ana→Beto, Ana→Caio, Beto→Ana, Beto→Caio, Caio→Ana, Caio→Beto.
 3. **Rodada** — quem dá as dicas vê a palavra e tenta fazer o parceiro adivinhá-la.
    - **Acertou** soma 1 acerto e sorteia outra palavra.
-   - **Pular** troca a palavra, mas custa 5 segundos do tempo restante.
+   - **Pular** troca a palavra e desconta tempo: o custo começa em 5 segundos e cai 1 por segundo enquanto a palavra está na tela, até zerar.
 4. **Fim da rodada** — quando o tempo zera, quem adivinhou ganha 1 ponto por acerto e quem deu as dicas ganha metade (arredondada para baixo). A tela lista as palavras da rodada, marcando acertos e erros, e mostra o placar.
 
 As palavras não se repetem na partida até a lista inteira ter saído.

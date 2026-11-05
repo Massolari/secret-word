@@ -139,7 +139,8 @@ contentTests =
             \_ ->
                 expectText
                     [ "Acertou para contar 1 acerto e trocar a palavra"
-                    , "Pular para trocar a palavra, mas isso custa 5 segundos do tempo restante"
+                    , "Pular custa até 5 segundos do tempo restante"
+                    , "o custo cai 1 segundo a cada segundo com a palavra na tela"
                     ]
         , test "Pontuação e fim da partida" <|
             \_ ->

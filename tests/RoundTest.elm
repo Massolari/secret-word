@@ -84,6 +84,14 @@ remaining seconds =
     ticks 1000 ((60 - seconds) * 1000)
 
 
+{-| Leva a rodada de 1min até restarem `seconds` segundos e acerta, para que
+uma palavra nova apareça nesse momento.
+-}
+newWordAt : Int -> Session -> Session
+newWordAt seconds =
+    remaining seconds >> correctAndWait
+
+
 {-| Termina a rodada de 1min e espera o bloqueio da tela de fim.
 -}
 endRound : Session -> Session
@@ -125,7 +133,15 @@ button label =
 
 skipButton : List Selector.Selector
 skipButton =
-    [ tag "button", attribute (Attr.attribute "aria-label" "Pular (perde 5 segundos)") ]
+    button "Pular"
+
+
+expectSkipCost : String -> String -> Session -> Session
+expectSkipCost shown label =
+    ProgramTest.ensureView
+        (Query.find skipButton
+            >> Query.has [ text shown, attribute (Attr.attribute "aria-label" label) ]
+        )
 
 
 expectEnabled : List Selector.Selector -> Bool -> Session -> Session
@@ -298,18 +314,51 @@ skipTests =
         [ test "Pular logo que a palavra aparece" <|
             \_ ->
                 inRound
-                    |> remaining 40
+                    |> newWordAt 40
                     |> expectTimer "00:40"
                     |> skip
                     |> expectTimer "00:35"
                     |> ProgramTest.ensureViewHas [ class "timer__fill", progressOf (35000 / 60000) ]
-                    |> expectWord "Abacateiro"
-                    |> expectCounter 0
+                    |> expectWord "Abacaxi"
+                    |> expectCounter 1
+                    |> done
+        , test "Custo diminui com o tempo" <|
+            \_ ->
+                inRound
+                    |> newWordAt 40
+                    |> ticks 21000 22000
+                    |> expectTimer "00:38"
+                    |> expectSkipCost "−3s" "Pular (perde 3 segundos)"
+                    |> skip
+                    |> expectTimer "00:35"
+                    |> done
+        , test "Pular de graça" <|
+            \_ ->
+                inRound
+                    |> newWordAt 40
+                    |> ticks 21000 27000
+                    |> expectTimer "00:33"
+                    |> ProgramTest.ensureView (Query.find skipButton >> Query.has [ class "skip-cost--hidden" ])
+                    |> skip
+                    |> expectTimer "00:33"
+                    |> expectWord "Abacaxi"
+                    |> done
+        , test "Custo recomeça a cada palavra" <|
+            \_ ->
+                inRound
+                    |> ticks 1000 2000
+                    |> expectSkipCost "−3s" "Pular (perde 3 segundos)"
+                    |> correctAndWait
+                    |> expectSkipCost "−5s" "Pular (perde 5 segundos)"
+                    |> tick 3000
+                    |> expectSkipCost "−4s" "Pular (perde 4 segundos)"
+                    |> skip
+                    |> expectSkipCost "−5s" "Pular (perde 5 segundos)"
                     |> done
         , test "Pulos seguidos" <|
             \_ ->
                 inRound
-                    |> remaining 30
+                    |> newWordAt 30
                     |> skip
                     |> skip
                     |> expectTimer "00:20"
@@ -317,30 +366,56 @@ skipTests =
         , test "Custo visível" <|
             \_ ->
                 inRound
-                    |> ProgramTest.ensureView (Query.find skipButton >> Query.has [ text "−5s" ])
-                    |> ProgramTest.expectViewHas skipButton
+                    |> expectSkipCost "−5s" "Pular (perde 5 segundos)"
+                    |> ticks 1000 4000
+                    |> expectSkipCost "−1s" "Pular (perde 1 segundo)"
+                    |> ProgramTest.ensureView (Query.find skipButton >> Query.hasNot [ class "skip-cost--hidden" ])
+                    |> done
+        , test "Sem custo para o leitor de tela" <|
+            \_ ->
+                inRound
+                    |> ticks 1000 5000
+                    |> expectSkipCost "Pular" "Pular (sem custo)"
+                    |> done
         , test "Tempo insuficiente" <|
             \_ ->
                 inRound
-                    |> remaining 5
+                    |> newWordAt 5
                     |> expectEnabled skipButton False
                     |> ProgramTest.update (GameMsg Jump)
                     |> expectTimer "00:05"
-                    |> expectWord "Abacate"
+                    |> expectWord "Abacateiro"
+                    |> ticks 56000 59000
+                    |> expectEnabled skipButton False
+                    |> ProgramTest.update (GameMsg Jump)
+                    |> expectTimer "00:01"
+                    |> expectWord "Abacateiro"
                     |> done
         , test "Limite exato" <|
             \_ ->
                 inRound
-                    |> remaining 6
+                    |> newWordAt 6
                     |> expectEnabled skipButton True
                     |> skip
                     |> expectTimer "00:01"
                     |> expectEnabled skipButton False
                     |> done
+        , test "Palavra antiga nos últimos segundos" <|
+            \_ ->
+                inRound
+                    |> newWordAt 20
+                    |> ticks 41000 57000
+                    |> expectTimer "00:03"
+                    |> expectEnabled skipButton True
+                    |> skip
+                    |> expectTimer "00:03"
+                    |> expectWord "Abacaxi"
+                    |> expectEnabled skipButton False
+                    |> done
         , test "Pulo leva aos últimos segundos" <|
             \_ ->
                 inRound
-                    |> remaining 14
+                    |> newWordAt 14
                     |> ProgramTest.ensureViewHasNot [ class "timer--alert" ]
                     |> skip
                     |> expectTimer "00:09"
